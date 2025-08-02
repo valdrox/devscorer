@@ -59,7 +59,7 @@ ${this.summarizeCodeChanges(contribution.diff)}
 
 Please provide a structured analysis in this exact format:
 
-SUMMARY: [One sentence describing what was implemented/fixed]
+SUMMARY: [One sentence imperative instruction describing what needs to be implemented/fixed, starting with a verb like "Fix", "Add", "Implement", "Update"]
 
 REQUIREMENTS:
 1. [Specific functional requirement]
@@ -68,9 +68,16 @@ REQUIREMENTS:
 
 TECHNICAL_CONTEXT: [Brief description of the technical approach and any frameworks/libraries used]
 
-COMPLEXITY: [simple|moderate|complex] - Based on the technical difficulty and scope of changes
+EXAMPLE OUTPUT:
+SUMMARY: Fix email validation that incorrectly rejects valid gmail.co.uk addresses
 
-Focus on extracting clear, actionable requirements that would allow another developer to implement the same functionality.`;
+REQUIREMENTS:
+1. Accept gmail.co.uk email addresses that are currently being rejected
+2. Still block obviously invalid email formats
+
+TECHNICAL_CONTEXT: Input validation with regex pattern matching for international domains
+
+Focus on extracting clear, actionable requirements that would allow another developer to implement the same functionality. Write the SUMMARY as an imperative command and keep requirements simple and result-oriented like a busy PM would write them.`;
   }
 
   private summarizeCodeChanges(diff: string): string {
@@ -181,7 +188,6 @@ Focus on extracting clear, actionable requirements that would allow another deve
     let summary = '';
     const requirements: string[] = [];
     let technicalContext = '';
-    let complexity: 'simple' | 'moderate' | 'complex' = 'moderate';
 
     let currentSection = '';
 
@@ -194,18 +200,12 @@ Focus on extracting clear, actionable requirements that would allow another deve
       } else if (line.startsWith('TECHNICAL_CONTEXT:')) {
         technicalContext = line.replace('TECHNICAL_CONTEXT:', '').trim();
         currentSection = 'technical';
-      } else if (line.startsWith('COMPLEXITY:')) {
-        const complexityText = line.replace('COMPLEXITY:', '').trim().toLowerCase();
-        if (['simple', 'moderate', 'complex'].includes(complexityText)) {
-          complexity = complexityText as 'simple' | 'moderate' | 'complex';
-        }
-        currentSection = 'complexity';
       } else if (currentSection === 'requirements' && line.match(/^\d+\./)) {
         const requirement = line.replace(/^\d+\.\s*/, '').trim();
         if (requirement) {
           requirements.push(requirement);
         }
-      } else if (currentSection === 'technical' && line && !line.startsWith('COMPLEXITY:')) {
+      } else if (currentSection === 'technical' && line) {
         technicalContext += ' ' + line;
       }
     }
@@ -213,8 +213,7 @@ Focus on extracting clear, actionable requirements that would allow another deve
     return {
       summary: summary || 'Code changes without clear business purpose',
       requirements: requirements.length > 0 ? requirements : ['Implement the changes shown in the code diff'],
-      technicalContext: technicalContext.trim() || 'No specific technical context identified',
-      complexity
+      technicalContext: technicalContext.trim() || 'No specific technical context identified'
     };
   }
 
@@ -234,10 +233,6 @@ Focus on extracting clear, actionable requirements that would allow another deve
       summary = 'Fix bug or issue';
     }
 
-    const complexity: 'simple' | 'moderate' | 'complex' = 
-      contribution.linesChanged > 200 ? 'complex' :
-      contribution.linesChanged > 50 ? 'moderate' : 'simple';
-
     return {
       summary,
       requirements: [
@@ -245,8 +240,7 @@ Focus on extracting clear, actionable requirements that would allow another deve
         'Implement equivalent functionality',
         'Maintain the same behavior and interface'
       ],
-      technicalContext: `Changes in ${contribution.linesChanged} lines across multiple files`,
-      complexity
+      technicalContext: `Changes in ${contribution.linesChanged} lines across multiple files`
     };
   }
 }

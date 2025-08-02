@@ -22,7 +22,6 @@ export interface BusinessPurpose {
   summary: string;
   requirements: string[];
   technicalContext: string;
-  complexity: 'simple' | 'moderate' | 'complex';
 }
 
 export interface ClaudeCodeResult {
