@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { BusinessPurpose, GitMerge, GitCommit } from '../types/index.js';
+import { BusinessPurpose, GitContribution, GitCommit } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 
@@ -12,13 +12,13 @@ export class BusinessExtractor {
     });
   }
 
-  async extractBusinessPurpose(merge: GitMerge): Promise<BusinessPurpose> {
-    logger.info(`Extracting business purpose for branch: ${merge.branch}`);
-    logger.debug(`Code changes: ${merge.linesChanged} lines in ${merge.commits.length} commits`);
-    logger.debug(`📝 Code diff:\n${merge.diff}`);
+  async extractBusinessPurpose(contribution: GitContribution): Promise<BusinessPurpose> {
+    logger.info(`Extracting business purpose for branch: ${contribution.branch}`);
+    logger.debug(`Code changes: ${contribution.linesChanged} lines in ${contribution.commits.length} commits`);
+    logger.debug(`📝 Code diff:\n${contribution.diff}`);
 
     try {
-      const prompt = this.buildAnalysisPrompt(merge);
+      const prompt = this.buildAnalysisPrompt(contribution);
       logger.debug(`Business analysis prompt: ${prompt}`);
       
       const response = await this.anthropic.messages.create({
@@ -39,23 +39,23 @@ export class BusinessExtractor {
       return businessPurpose;
     } catch (error) {
       logger.error(`Failed to extract business purpose: ${error}`);
-      return this.createFallbackBusinessPurpose(merge);
+      return this.createFallbackBusinessPurpose(contribution);
     }
   }
 
-  private buildAnalysisPrompt(merge: GitMerge): string {
-    return `Analyze this git merge and extract the business purpose and requirements. 
+  private buildAnalysisPrompt(contribution: GitContribution): string {
+    return `Analyze this git contribution and extract the business purpose and requirements. 
 
 PROJECT CONTEXT:
-${merge.projectContext}
+${contribution.projectContext}
 
-BRANCH NAME: ${merge.branch}
+BRANCH NAME: ${contribution.branch}
 
 COMMIT MESSAGES:
-${merge.commits.map(c => `- ${c.message}`).join('\n')}
+${contribution.commits.map(c => `- ${c.message}`).join('\n')}
 
 CODE CHANGES SUMMARY:
-${this.summarizeCodeChanges(merge.diff)}
+${this.summarizeCodeChanges(contribution.diff)}
 
 Please provide a structured analysis in this exact format:
 
@@ -218,8 +218,8 @@ Focus on extracting clear, actionable requirements that would allow another deve
     };
   }
 
-  private createFallbackBusinessPurpose(merge: GitMerge): BusinessPurpose {
-    const branchWords = merge.branch.split(/[-_]/).filter(word => word.length > 2);
+  private createFallbackBusinessPurpose(contribution: GitContribution): BusinessPurpose {
+    const branchWords = contribution.branch.split(/[-_]/).filter(word => word.length > 2);
     const hasFeatureKeywords = branchWords.some(word => 
       ['feature', 'feat', 'add', 'new', 'implement'].includes(word.toLowerCase())
     );
@@ -235,8 +235,8 @@ Focus on extracting clear, actionable requirements that would allow another deve
     }
 
     const complexity: 'simple' | 'moderate' | 'complex' = 
-      merge.linesChanged > 200 ? 'complex' :
-      merge.linesChanged > 50 ? 'moderate' : 'simple';
+      contribution.linesChanged > 200 ? 'complex' :
+      contribution.linesChanged > 50 ? 'moderate' : 'simple';
 
     return {
       summary,
@@ -245,7 +245,7 @@ Focus on extracting clear, actionable requirements that would allow another deve
         'Implement equivalent functionality',
         'Maintain the same behavior and interface'
       ],
-      technicalContext: `Changes in ${merge.linesChanged} lines across multiple files`,
+      technicalContext: `Changes in ${contribution.linesChanged} lines across multiple files`,
       complexity
     };
   }

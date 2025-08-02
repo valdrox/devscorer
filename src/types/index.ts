@@ -6,7 +6,7 @@ export interface GitCommit {
   diff: string;
 }
 
-export interface GitMerge {
+export interface GitContribution {
   branch: string;
   author: string;
   date: Date;

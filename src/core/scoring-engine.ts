@@ -1,34 +1,34 @@
-import { ContributionScore, Hint, AnalysisReport, GitMerge, BusinessPurpose } from '../types/index.js';
+import { ContributionScore, Hint, AnalysisReport, GitContribution, BusinessPurpose } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 export class ScoringEngine {
   calculateComplexityScore(
-    merge: GitMerge,
+    contribution: GitContribution,
     hintsNeeded: number,
     hints: Hint[],
     attempts: number,
-    aiMatched: boolean
+    functionalityMatched: boolean
   ): number {
-    logger.debug(`Calculating complexity score for ${merge.branch}`);
+    logger.debug(`Calculating complexity score for ${contribution.branch}`);
 
-    const baseComplexity = this.calculateBaseComplexity(merge);
+    const baseComplexity = this.calculateBaseComplexity(contribution);
     const hintComplexity = this.calculateHintComplexity(hints);
-    const attemptPenalty = this.calculateAttemptPenalty(attempts, aiMatched);
-    const difficultyBonus = this.calculateDifficultyBonus(hintsNeeded, attempts, aiMatched);
+    const attemptPenalty = this.calculateAttemptPenalty(attempts, functionalityMatched);
+    const difficultyBonus = this.calculateDifficultyBonus(hintsNeeded, attempts, functionalityMatched);
 
     const rawScore = baseComplexity + hintComplexity + attemptPenalty + difficultyBonus;
     
     const normalizedScore = Math.max(0, Math.min(100, rawScore));
 
-    logger.debug(`Score components for ${merge.branch}: base=${baseComplexity}, hints=${hintComplexity}, attempts=${attemptPenalty}, difficulty=${difficultyBonus}, final=${normalizedScore}`);
+    logger.debug(`Score components for ${contribution.branch}: base=${baseComplexity}, hints=${hintComplexity}, attempts=${attemptPenalty}, difficulty=${difficultyBonus}, final=${normalizedScore}`);
 
     return Math.round(normalizedScore * 100) / 100;
   }
 
-  private calculateBaseComplexity(merge: GitMerge): number {
-    const linesChanged = merge.linesChanged;
-    const filesModified = this.countModifiedFiles(merge.diff);
-    const commitCount = merge.commits.length;
+  private calculateBaseComplexity(contribution: GitContribution): number {
+    const linesChanged = contribution.linesChanged;
+    const filesModified = this.countModifiedFiles(contribution.diff);
+    const commitCount = contribution.commits.length;
 
     let baseScore = 0;
 
@@ -38,7 +38,7 @@ export class ScoringEngine {
     
     baseScore += Math.min(commitCount * 1.5, 10);
 
-    const codeComplexity = this.analyzeCodeComplexity(merge.diff);
+    const codeComplexity = this.analyzeCodeComplexity(contribution.diff);
     baseScore += codeComplexity;
 
     return Math.min(baseScore, 30);
@@ -158,7 +158,7 @@ export class ScoringEngine {
   }
 
   createContributionScore(
-    merge: GitMerge,
+    contribution: GitContribution,
     businessPurpose: BusinessPurpose,
     finalScore: number,
     hintsNeeded: number,
@@ -166,16 +166,16 @@ export class ScoringEngine {
     attempts: number
   ): ContributionScore {
     return {
-      developer: merge.author,
-      date: merge.date,
-      branch: merge.branch,
+      developer: contribution.author,
+      date: contribution.date,
+      branch: contribution.branch,
       description: businessPurpose.summary,
       score: finalScore,
       hintsNeeded: hintsNeeded,
       details: {
         attempts: attempts,
         hints: hints,
-        baseComplexity: this.calculateBaseComplexity(merge),
+        baseComplexity: this.calculateBaseComplexity(contribution),
         aiDifficulty: hintsNeeded > 0 ? Math.min(hintsNeeded * 10, 50) : 0
       }
     };

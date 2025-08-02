@@ -2,7 +2,7 @@ import simpleGit, { SimpleGit, LogOptions } from 'simple-git';
 import fs from 'fs-extra';
 import path from 'path';
 import tmp from 'tmp';
-import { GitCommit, GitMerge } from '../types/index.js';
+import { GitCommit, GitContribution } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 export class GitAnalyzer {
@@ -30,7 +30,7 @@ export class GitAnalyzer {
     }
   }
 
-  async getRecentMerges(days: number = 7): Promise<GitMerge[]> {
+  async getRecentContributions(days: number = 7): Promise<GitContribution[]> {
     if (!this.repoPath) {
       throw new Error('Repository not cloned. Call cloneRepository first.');
     }
@@ -38,20 +38,20 @@ export class GitAnalyzer {
     const sinceDate = new Date();
     sinceDate.setDate(sinceDate.getDate() - days);
 
-    logger.info(`Analyzing merges from the last ${days} days`);
+    logger.info(`Analyzing contributions from the last ${days} days`);
 
     try {
       // Use raw git command for better date handling
-      // Look for both merge commits and regular commits that might be squashed merges
+      // Look for individual commits (non-merge commits are more common in modern workflows)
       const sinceDateStr = sinceDate.toISOString().split('T')[0];
       const logResult = await this.git.raw([
         'log',
         '--since=' + sinceDateStr,
         '--pretty=format:%H|%ai|%s|%an|%ae',
-        '--no-merges' // Actually, let's look at non-merge commits which are more common now
+        '--no-merges' // Focus on individual commits rather than merge commits
       ]);
       
-      const merges: GitMerge[] = [];
+      const contributions: GitContribution[] = [];
       const commitLines = logResult.trim().split('\n').filter(line => line.length > 0);
 
       for (const line of commitLines) {
@@ -67,18 +67,18 @@ export class GitAnalyzer {
         // Since we're looking at regular commits now, treat them as individual contributions
         // Skip very small commits (like version bumps)
         if (this.isSignificantCommit(commit.message)) {
-          const merge = await this.analyzeRegularCommit(commit);
-          if (merge) {
-            merges.push(merge);
+          const contribution = await this.analyzeRegularCommit(commit);
+          if (contribution) {
+            contributions.push(contribution);
           }
         }
       }
 
-      logger.info(`Found ${merges.length} significant commits in the last ${days} days`);
-      return merges;
+      logger.info(`Found ${contributions.length} significant commits in the last ${days} days`);
+      return contributions;
     } catch (error) {
-      logger.error(`Failed to get recent merges: ${error}`);
-      throw new Error(`Failed to get recent merges: ${error}`);
+      logger.error(`Failed to get recent contributions: ${error}`);
+      throw new Error(`Failed to get recent contributions: ${error}`);
     }
   }
 
@@ -117,7 +117,7 @@ export class GitAnalyzer {
     return message.length > 10;
   }
 
-  private async analyzeMergeCommit(commit: any): Promise<GitMerge | null> {
+  private async analyzeMergeCommit(commit: any): Promise<GitContribution | null> {
     try {
       const branchName = this.extractBranchName(commit.message);
       const mergeCommits = await this.getMergeCommitDetails(commit.hash);
@@ -145,7 +145,7 @@ export class GitAnalyzer {
     }
   }
 
-  private async analyzeRegularCommit(commit: any): Promise<GitMerge | null> {
+  private async analyzeRegularCommit(commit: any): Promise<GitContribution | null> {
     try {
       // For regular commits, we treat the commit message as the "branch" name
       const branchName = commit.message.substring(0, 50); // Truncate for readability

@@ -9,7 +9,7 @@ import { BusinessExtractor } from './core/business-extractor.js';
 import { ClaudeRunner } from './core/claude-runner.js';
 import { CodeComparator } from './core/code-comparator.js';
 import { ScoringEngine } from './core/scoring-engine.js';
-import { ContributionScore, AnalysisReport } from './types/index.js';
+import { ContributionScore, AnalysisReport, GitContribution, Hint } from './types/index.js';
 import { logger, setLogLevel } from './utils/logger.js';
 import { config, validateConfig } from './utils/config.js';
 import { tempManager } from './utils/temp-manager.js';
@@ -37,19 +37,19 @@ class GitContributionScorer {
       const repoPath = await this.gitAnalyzer.cloneRepository(repoUrl);
       logger.info(`Repository cloned successfully`);
 
-      const allRecentMerges = await this.gitAnalyzer.getRecentMerges(days);
+      const allRecentContributions = await this.gitAnalyzer.getRecentContributions(days);
       
       // Apply limit if specified
-      const recentMerges = limit ? allRecentMerges.slice(0, limit) : allRecentMerges;
+      const contributionsToAnalyze = limit ? allRecentContributions.slice(0, limit) : allRecentContributions;
       
-      if (limit && allRecentMerges.length > limit) {
-        logger.info(`Found ${allRecentMerges.length} recent merges, limiting to first ${limit} for analysis`);
+      if (limit && allRecentContributions.length > limit) {
+        logger.info(`Found ${allRecentContributions.length} recent contributions, limiting to first ${limit} for analysis`);
       } else {
-        logger.info(`Found ${recentMerges.length} recent merges to analyze`);
+        logger.info(`Found ${contributionsToAnalyze.length} recent contributions to analyze`);
       }
 
-      if (recentMerges.length === 0) {
-        logger.warn('No recent merges found in the specified timeframe');
+      if (contributionsToAnalyze.length === 0) {
+        logger.warn('No recent contributions found in the specified timeframe');
         return this.scoringEngine.generateDetailedReport(repoUrl, days, []);
       }
 
@@ -61,16 +61,16 @@ class GitContributionScorer {
       const developerScores: ContributionScore[] = [];
       let processed = 0;
 
-      for (const merge of recentMerges) {
+      for (const contribution of contributionsToAnalyze) {
         try {
-          logger.info(`Analyzing merge ${++processed}/${recentMerges.length}: ${merge.branch}`);
-          logger.info(`🔍 Exploring ${merge.branch} by ${merge.author}`);
-          const score = await this.analyzeSingleMerge(merge);
+          logger.info(`Analyzing contribution ${++processed}/${contributionsToAnalyze.length}: ${contribution.branch}`);
+          logger.info(`🔍 Exploring ${contribution.branch} by ${contribution.author}`);
+          const score = await this.analyzeContribution(contribution);
           if (score) {
             developerScores.push(score);
           }
         } catch (error) {
-          logger.error(`Failed to analyze merge ${merge.branch}: ${error}`);
+          logger.error(`Failed to analyze contribution ${contribution.branch}: ${error}`);
         }
       }
 
@@ -84,53 +84,53 @@ class GitContributionScorer {
     }
   }
 
-  private async analyzeSingleMerge(merge: any): Promise<ContributionScore | null> {
-    const businessPurpose = await this.businessExtractor.extractBusinessPurpose(merge);
-    logger.debug(`Business purpose extracted for ${merge.branch}: ${businessPurpose.summary}`);
+  private async analyzeContribution(contribution: GitContribution): Promise<ContributionScore | null> {
+    const businessPurpose = await this.businessExtractor.extractBusinessPurpose(contribution);
+    logger.debug(`Business purpose extracted for ${contribution.branch}: ${businessPurpose.summary}`);
 
     // Create pre-commit repository for Claude Code to work with
-    logger.debug(`Creating pre-commit repository for ${merge.branch} (commit: ${merge.commitHash})`);
+    logger.debug(`Creating pre-commit repository for ${contribution.branch} (commit: ${contribution.commitHash})`);
     let preCommitRepoPath: string;
     
     try {
-      preCommitRepoPath = await this.gitAnalyzer.createPreCommitRepository(merge.commitHash);
+      preCommitRepoPath = await this.gitAnalyzer.createPreCommitRepository(contribution.commitHash);
       logger.debug(`Pre-commit repository created at: ${preCommitRepoPath}`);
     } catch (error) {
-      logger.error(`Failed to create pre-commit repository for ${merge.branch}: ${error}`);
+      logger.error(`Failed to create pre-commit repository for ${contribution.branch}: ${error}`);
       return null;
     }
 
-    let aiMatched = false;
-    const hintsGiven: any[] = [];
+    let functionalityMatched = false;
+    const hintsGiven: Hint[] = [];
     let attempts = 0;
     const maxAttempts = config.maxHintsPerAnalysis;
 
-    while (!aiMatched && attempts < maxAttempts) {
+    while (!functionalityMatched && attempts < maxAttempts) {
       attempts++;
-      logger.debug(`Attempt ${attempts} for ${merge.branch}`);
+      logger.debug(`Attempt ${attempts} for ${contribution.branch}`);
 
       try {
         const aiResult = await this.claudeRunner.runClaudeCode(
           businessPurpose,
-          merge.projectContext,
+          contribution.projectContext,
           preCommitRepoPath,
           hintsGiven
         );
 
         if (!aiResult.success) {
-          logger.warn(`Claude Code failed on attempt ${attempts} for ${merge.branch}: ${aiResult.errors?.join(', ')}`);
+          logger.warn(`Claude Code failed on attempt ${attempts} for ${contribution.branch}: ${aiResult.errors?.join(', ')}`);
           break;
         }
 
         const comparison = await this.codeComparator.compareFunctionality(
-          merge.diff,
+          contribution.diff,
           aiResult.code,
           businessPurpose.requirements
         );
 
         if (comparison.isEquivalent || comparison.similarityScore >= config.similarityThreshold) {
-          aiMatched = true;
-          logger.debug(`AI matched functionality for ${merge.branch} on attempt ${attempts}`);
+          functionalityMatched = true;
+          logger.debug(`Claude Code matched functionality for ${contribution.branch} on attempt ${attempts}`);
         } else {
           const nextHint = await this.codeComparator.generateProgressiveHint(
             comparison.gaps,
@@ -139,10 +139,10 @@ class GitContributionScorer {
             hintsGiven
           );
           hintsGiven.push(nextHint);
-          logger.debug(`Generated hint ${hintsGiven.length} for ${merge.branch}: ${nextHint.content}`);
+          logger.debug(`Generated hint ${hintsGiven.length} for ${contribution.branch}: ${nextHint.content}`);
         }
       } catch (error) {
-        logger.error(`Error during attempt ${attempts} for ${merge.branch}: ${error}`);
+        logger.error(`Error during attempt ${attempts} for ${contribution.branch}: ${error}`);
         break;
       }
 
@@ -158,15 +158,15 @@ class GitContributionScorer {
     }
 
     const complexityScore = this.scoringEngine.calculateComplexityScore(
-      merge,
+      contribution,
       hintsGiven.length,
       hintsGiven,
       attempts,
-      aiMatched
+      functionalityMatched
     );
 
     const contributionScore = this.scoringEngine.createContributionScore(
-      merge,
+      contribution,
       businessPurpose,
       complexityScore,
       hintsGiven.length,
@@ -174,7 +174,7 @@ class GitContributionScorer {
       attempts
     );
 
-    logger.info(`Score for ${merge.branch}: ${complexityScore} (${hintsGiven.length} hints, ${attempts} attempts)`);
+    logger.info(`Score for ${contribution.branch}: ${complexityScore} (${hintsGiven.length} hints, ${attempts} attempts)`);
     return contributionScore;
   }
 }
