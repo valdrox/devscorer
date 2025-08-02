@@ -11,15 +11,17 @@ export class ClaudeRunner {
   async runClaudeCode(
     businessPurpose: BusinessPurpose,
     projectContext: string,
+    preCommitRepoPath: string,
     previousHints: Hint[] = []
   ): Promise<ClaudeCodeResult> {
     logger.info('Running Claude Code with business requirements');
 
     try {
-      const workDir = await this.createWorkingDirectory();
+      // Use the pre-commit repository as the working directory
+      this.workingDir = preCommitRepoPath;
       const prompt = this.buildPrompt(businessPurpose, projectContext, previousHints);
       
-      const result = await this.executeClaudeCode(prompt, workDir);
+      const result = await this.executeClaudeCode(prompt, preCommitRepoPath);
       
       return {
         code: result.code,
@@ -37,67 +39,39 @@ export class ClaudeRunner {
     }
   }
 
-  private async createWorkingDirectory(): Promise<string> {
-    this.workingDir = await tempManager.createTempDirectory('claude-work-');
-    
-    const srcDir = path.join(this.workingDir, 'src');
-    await fs.ensureDir(srcDir);
-    
-    await this.createBasicProjectStructure(this.workingDir);
-    
-    logger.debug(`Created working directory: ${this.workingDir}`);
-    return this.workingDir;
-  }
-
-  private async createBasicProjectStructure(workDir: string): Promise<void> {
-    const packageJson = {
-      name: 'claude-test-project',
-      version: '1.0.0',
-      description: 'Test project for Claude Code analysis',
-      main: 'src/index.js',
-      scripts: {
-        test: 'echo "No tests specified"',
-        build: 'echo "No build specified"'
-      }
-    };
-
-    await fs.writeJson(path.join(workDir, 'package.json'), packageJson, { spaces: 2 });
-    
-    const gitignore = `node_modules/\n*.log\ndist/\nbuild/\n.env\n`;
-    await fs.writeFile(path.join(workDir, '.gitignore'), gitignore);
-  }
 
   private buildPrompt(
     businessPurpose: BusinessPurpose,
     projectContext: string,
     previousHints: Hint[]
   ): string {
-    let prompt = `You are implementing a feature based on these requirements:
+    logger.debug(`Building Claude Code prompt with ${businessPurpose.requirements.length} requirements and ${previousHints.length} hints`);
+    
+    let prompt = `IMMEDIATE TASK: Implement the following feature requirements directly in the existing codebase.
 
-BUSINESS GOAL:
-${businessPurpose.summary}
-
-SPECIFIC REQUIREMENTS:
+REQUIREMENTS TO IMPLEMENT:
 ${businessPurpose.requirements.map((req, idx) => `${idx + 1}. ${req}`).join('\n')}
 
-TECHNICAL CONTEXT:
-${businessPurpose.technicalContext}
+BUSINESS GOAL: ${businessPurpose.summary}
 
-PROJECT CONTEXT:
-${projectContext}
+TECHNICAL CONTEXT: ${businessPurpose.technicalContext}
 
-COMPLEXITY LEVEL: ${businessPurpose.complexity}
+IMPLEMENTATION INSTRUCTIONS:
+1. Implement the required functionality by modifying existing files or creating new ones
+2. Study the existing codebase structure and follow established patterns
+3. Make your changes fit naturally into the existing architecture
 
-Please implement code that fulfills these requirements. Focus on creating functional, working code that addresses all the specified requirements.`;
+CODEBASE CONTEXT:
+- All existing files, dependencies, and structure are available
+- Follow the project's existing conventions and patterns
+- Use the same libraries and frameworks already in use`;
 
     if (previousHints.length > 0) {
-      prompt += `\n\nIMPORTANT HINTS FROM PREVIOUS ATTEMPTS:
-${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}
-
-Please incorporate these hints into your implementation.`;
+      prompt += `\n\nCRITICAL HINTS (incorporate these):
+${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     }
 
-    prompt += `\n\nCreate the necessary files in the src/ directory. Make sure your implementation is complete and functional.`;
+    prompt += `\n\nSTART IMPLEMENTING NOW. Use the existing codebase as your foundation and implement the required functionality.`;
 
     return prompt;
   }
@@ -121,22 +95,43 @@ Please incorporate these hints into your implementation.`;
       }, 300000); // 5 minutes
 
       logger.debug(`Executing Claude Code in directory: ${workDir}`);
+      logger.debug(`Claude Code prompt: ${prompt}`);
 
       for await (const message of query({
         prompt,
         abortController,
         options: {
-          maxTurns: 10,
+          maxTurns: 8, // Reduced from 10 to force more focused implementation
           cwd: workDir
         }
       })) {
         messages.push(message);
         
-        // Log progress for debugging
+        // Log detailed progress for debugging
         if (message.type === 'assistant') {
-          logger.debug('Claude Code: Assistant message received');
+          const content = message.message.content;
+          if (Array.isArray(content) && content.length > 0) {
+            const textContent = content.find(c => c.type === 'text');
+            if (textContent && 'text' in textContent) {
+              logger.debug(`Claude Code: ${textContent.text}`);
+            }
+          }
+        } else if (message.type === 'user') {
+          const content = message.message.content;
+          if (Array.isArray(content) && content.length > 0) {
+            const textContent = content.find(c => c.type === 'text');
+            if (textContent && 'text' in textContent) {
+              logger.debug(`Claude Code User: ${textContent.text}`);
+            }
+          } else if (typeof content === 'string') {
+            logger.debug(`Claude Code User: ${content}`);
+          } else {
+            logger.debug(`Claude Code: User input received (non-text content)`);
+          }
         } else if (message.type === 'result') {
-          logger.debug(`Claude Code completed with ${message.num_turns} turns`);
+          logger.debug(`Claude Code completed with ${message.num_turns} turns, result: ${message.subtype}`);
+        } else if (message.type === 'system') {
+          logger.debug(`Claude Code: System message - ${message.subtype}`);
         }
       }
 
@@ -151,7 +146,9 @@ Please incorporate these hints into your implementation.`;
 
       if (resultMessage.subtype === 'success') {
         // Extract generated code from the working directory
+        logger.debug(`✅ Claude Code completed successfully, extracting generated files...`);
         const generatedCode = await this.extractGeneratedCode(workDir);
+        logger.debug(`📁 Generated code (${generatedCode.length} chars): ${generatedCode}`);
         
         return {
           code: generatedCode,
@@ -195,10 +192,12 @@ Please incorporate these hints into your implementation.`;
 
     if (await fs.pathExists(srcDir)) {
       const files = await this.getAllFiles(srcDir);
+      logger.debug(`📂 Found ${files.length} generated files in src/`);
       
       for (const file of files) {
         const relativePath = path.relative(workDir, file);
         const content = await fs.readFile(file, 'utf-8');
+        logger.debug(`📄 Generated file: ${relativePath} (${content.length} chars)`);
         
         codeFiles.push(`// File: ${relativePath}`);
         codeFiles.push(content);

@@ -29,15 +29,24 @@ class GitContributionScorer {
     this.scoringEngine = new ScoringEngine();
   }
 
-  async analyzeContributions(repoUrl: string, days: number = 7): Promise<AnalysisReport> {
-    logger.info(`Starting analysis of ${repoUrl} for the last ${days} days`);
+  async analyzeContributions(repoUrl: string, days: number = 7, limit?: number): Promise<AnalysisReport> {
+    const limitText = limit ? ` (max ${limit} commits)` : '';
+    logger.info(`Starting analysis of ${repoUrl} for the last ${days} days${limitText}`);
 
     try {
       const repoPath = await this.gitAnalyzer.cloneRepository(repoUrl);
       logger.info(`Repository cloned successfully`);
 
-      const recentMerges = await this.gitAnalyzer.getRecentMerges(days);
-      logger.info(`Found ${recentMerges.length} recent merges to analyze`);
+      const allRecentMerges = await this.gitAnalyzer.getRecentMerges(days);
+      
+      // Apply limit if specified
+      const recentMerges = limit ? allRecentMerges.slice(0, limit) : allRecentMerges;
+      
+      if (limit && allRecentMerges.length > limit) {
+        logger.info(`Found ${allRecentMerges.length} recent merges, limiting to first ${limit} for analysis`);
+      } else {
+        logger.info(`Found ${recentMerges.length} recent merges to analyze`);
+      }
 
       if (recentMerges.length === 0) {
         logger.warn('No recent merges found in the specified timeframe');
@@ -55,6 +64,7 @@ class GitContributionScorer {
       for (const merge of recentMerges) {
         try {
           logger.info(`Analyzing merge ${++processed}/${recentMerges.length}: ${merge.branch}`);
+          logger.info(`🔍 Exploring ${merge.branch} by ${merge.author}`);
           const score = await this.analyzeSingleMerge(merge);
           if (score) {
             developerScores.push(score);
@@ -78,6 +88,18 @@ class GitContributionScorer {
     const businessPurpose = await this.businessExtractor.extractBusinessPurpose(merge);
     logger.debug(`Business purpose extracted for ${merge.branch}: ${businessPurpose.summary}`);
 
+    // Create pre-commit repository for Claude Code to work with
+    logger.debug(`Creating pre-commit repository for ${merge.branch} (commit: ${merge.commitHash})`);
+    let preCommitRepoPath: string;
+    
+    try {
+      preCommitRepoPath = await this.gitAnalyzer.createPreCommitRepository(merge.commitHash);
+      logger.debug(`Pre-commit repository created at: ${preCommitRepoPath}`);
+    } catch (error) {
+      logger.error(`Failed to create pre-commit repository for ${merge.branch}: ${error}`);
+      return null;
+    }
+
     let aiMatched = false;
     const hintsGiven: any[] = [];
     let attempts = 0;
@@ -91,6 +113,7 @@ class GitContributionScorer {
         const aiResult = await this.claudeRunner.runClaudeCode(
           businessPurpose,
           merge.projectContext,
+          preCommitRepoPath,
           hintsGiven
         );
 
@@ -116,7 +139,7 @@ class GitContributionScorer {
             hintsGiven
           );
           hintsGiven.push(nextHint);
-          logger.debug(`Generated hint ${hintsGiven.length} for ${merge.branch}: ${nextHint.content.substring(0, 100)}...`);
+          logger.debug(`Generated hint ${hintsGiven.length} for ${merge.branch}: ${nextHint.content}`);
         }
       } catch (error) {
         logger.error(`Error during attempt ${attempts} for ${merge.branch}: ${error}`);
@@ -124,6 +147,14 @@ class GitContributionScorer {
       }
 
       await this.claudeRunner.cleanup();
+    }
+
+    // Clean up the pre-commit repository
+    try {
+      await fs.remove(preCommitRepoPath);
+      logger.debug(`Cleaned up pre-commit repository: ${preCommitRepoPath}`);
+    } catch (error) {
+      logger.warn(`Failed to cleanup pre-commit repository: ${error}`);
     }
 
     const complexityScore = this.scoringEngine.calculateComplexityScore(
@@ -157,6 +188,7 @@ async function main() {
     .version('1.0.0')
     .argument('<repo-url>', 'GitHub repository URL')
     .option('-d, --days <number>', 'Number of days to analyze', '7')
+    .option('-l, --limit <number>', 'Maximum number of commits to analyze (for faster testing)')
     .option('-o, --output <file>', 'Output file for results (JSON format)')
     .option('--format <type>', 'Output format (table|json|csv)', 'table')
     .option('--verbose', 'Enable verbose logging')
@@ -177,15 +209,24 @@ async function main() {
           throw new Error('Days must be a number between 1 and 365');
         }
 
+        let limit: number | undefined;
+        if (options.limit) {
+          limit = parseInt(options.limit, 10);
+          if (isNaN(limit) || limit < 1 || limit > 1000) {
+            throw new Error('Limit must be a number between 1 and 1000');
+          }
+        }
+
         if (!repoUrl.match(/^https?:\/\//)) {
           throw new Error('Repository URL must be a valid HTTP/HTTPS URL');
         }
 
         console.log(chalk.blue('🔍 Git Contribution Scorer'));
-        console.log(chalk.gray(`Analyzing ${repoUrl} for the last ${days} days...\n`));
+        const limitText = limit ? ` (max ${limit} commits)` : '';
+        console.log(chalk.gray(`Analyzing ${repoUrl} for the last ${days} days${limitText}...\n`));
 
         const scorer = new GitContributionScorer();
-        const report = await scorer.analyzeContributions(repoUrl, days);
+        const report = await scorer.analyzeContributions(repoUrl, days, limit);
 
         if (options.output) {
           await fs.writeJson(options.output, report, { spaces: 2 });

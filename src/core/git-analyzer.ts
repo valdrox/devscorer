@@ -124,6 +124,9 @@ export class GitAnalyzer {
       const diff = await this.getMergeDiff(commit.hash);
       const linesChanged = this.countLinesChanged(diff);
       const projectContext = await this.getProjectContext();
+      
+      // Get the pre-commit hash (parent of this commit)
+      const preCommitHash = await this.git.raw(['rev-parse', `${commit.hash}~1`]);
 
       return {
         branch: branchName,
@@ -132,7 +135,9 @@ export class GitAnalyzer {
         commits: mergeCommits,
         diff: diff,
         linesChanged: linesChanged,
-        projectContext: projectContext
+        projectContext: projectContext,
+        commitHash: commit.hash,
+        preCommitHash: preCommitHash.trim()
       };
     } catch (error) {
       logger.warn(`Failed to analyze merge commit ${commit.hash}: ${error}`);
@@ -147,6 +152,9 @@ export class GitAnalyzer {
       const diff = await this.getCommitDiff(commit.hash);
       const linesChanged = this.countLinesChanged(diff);
       const projectContext = await this.getProjectContext();
+      
+      // Get the pre-commit hash (parent of this commit)
+      const preCommitHash = await this.git.raw(['rev-parse', `${commit.hash}~1`]);
 
       // Create a single-commit "merge" for analysis
       const singleCommit: GitCommit = {
@@ -164,7 +172,9 @@ export class GitAnalyzer {
         commits: [singleCommit],
         diff: diff,
         linesChanged: linesChanged,
-        projectContext: projectContext
+        projectContext: projectContext,
+        commitHash: commit.hash,
+        preCommitHash: preCommitHash.trim()
       };
     } catch (error) {
       logger.warn(`Failed to analyze commit ${commit.hash}: ${error}`);
@@ -323,6 +333,38 @@ export class GitAnalyzer {
       return structure.join(', ');
     } catch (error) {
       return null;
+    }
+  }
+
+  async createPreCommitRepository(commitHash: string): Promise<string> {
+    if (!this.repoPath) {
+      throw new Error('Repository not cloned. Call cloneRepository first.');
+    }
+
+    const tempDir = tmp.dirSync({ prefix: 'precommit-', unsafeCleanup: true });
+    const preCommitPath = tempDir.name;
+    
+    logger.debug(`Creating pre-commit repository at ${preCommitPath} for commit ${commitHash}`);
+    
+    try {
+      // Clone the current repository to a new location
+      await this.git.clone(this.repoPath, preCommitPath);
+      
+      // Switch to the new repository
+      const preCommitGit = simpleGit(preCommitPath);
+      
+      // Get the parent commit (the state before this commit)
+      const preCommitHash = await preCommitGit.raw(['rev-parse', `${commitHash}~1`]);
+      const cleanPreCommitHash = preCommitHash.trim();
+      
+      // Checkout to the pre-commit state
+      await preCommitGit.checkout(cleanPreCommitHash);
+      
+      logger.debug(`Pre-commit repository created and checked out to ${cleanPreCommitHash}`);
+      return preCommitPath;
+    } catch (error) {
+      logger.error(`Failed to create pre-commit repository: ${error}`);
+      throw new Error(`Failed to create pre-commit repository: ${error}`);
     }
   }
 

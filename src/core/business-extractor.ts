@@ -14,9 +14,12 @@ export class BusinessExtractor {
 
   async extractBusinessPurpose(merge: GitMerge): Promise<BusinessPurpose> {
     logger.info(`Extracting business purpose for branch: ${merge.branch}`);
+    logger.debug(`Code changes: ${merge.linesChanged} lines in ${merge.commits.length} commits`);
+    logger.debug(`📝 Code diff:\n${merge.diff}`);
 
     try {
       const prompt = this.buildAnalysisPrompt(merge);
+      logger.debug(`Business analysis prompt: ${prompt}`);
       
       const response = await this.anthropic.messages.create({
         model: config.claudeModel,
@@ -30,7 +33,10 @@ export class BusinessExtractor {
       });
 
       const analysisText = response.content[0].type === 'text' ? response.content[0].text : '';
-      return this.parseBusinessPurpose(analysisText);
+      const businessPurpose = this.parseBusinessPurpose(analysisText);
+      logger.debug(`🎯 Extracted business purpose: ${businessPurpose.summary}`);
+      logger.debug(`📋 Requirements (${businessPurpose.requirements.length}): ${businessPurpose.requirements.join('; ')}`);
+      return businessPurpose;
     } catch (error) {
       logger.error(`Failed to extract business purpose: ${error}`);
       return this.createFallbackBusinessPurpose(merge);

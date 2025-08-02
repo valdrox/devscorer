@@ -14,6 +14,8 @@ export interface GitMerge {
   diff: string;
   linesChanged: number;
   projectContext: string;
+  commitHash: string;
+  preCommitHash: string;
 }
 
 export interface BusinessPurpose {
