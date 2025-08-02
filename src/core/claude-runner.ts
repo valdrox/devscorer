@@ -101,7 +101,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         prompt,
         abortController,
         options: {
-          maxTurns: 8, // Reduced from 10 to force more focused implementation
+          maxTurns: 30, // Increased to allow more complex implementations
           cwd: workDir
         }
       })) {
