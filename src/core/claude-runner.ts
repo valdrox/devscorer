@@ -158,7 +158,8 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         abortController,
         options: {
           maxTurns: 30, // Increased to allow more complex implementations
-          cwd: workDir
+          cwd: workDir,
+          permissionMode: 'bypassPermissions'
         }
       })) {
         messages.push(message);
