@@ -361,11 +361,44 @@ export class GitAnalyzer {
       await preCommitGit.checkout(cleanPreCommitHash);
       
       logger.debug(`Pre-commit repository created and checked out to ${cleanPreCommitHash}`);
+      
+      // List the files in the pre-commit repository for debugging
+      try {
+        const files = await this.listRepositoryFiles(preCommitPath);
+        logger.debug(`📁 Files available in pre-commit repository: ${files.slice(0, 20).join(', ')}${files.length > 20 ? ` (and ${files.length - 20} more)` : ''}`);
+      } catch (error) {
+        logger.debug(`Could not list pre-commit repository files: ${error}`);
+      }
+      
       return preCommitPath;
     } catch (error) {
       logger.error(`Failed to create pre-commit repository: ${error}`);
       throw new Error(`Failed to create pre-commit repository: ${error}`);
     }
+  }
+
+  private async listRepositoryFiles(repoPath: string): Promise<string[]> {
+    const files: string[] = [];
+    
+    async function walk(dir: string): Promise<void> {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        if (entry.name.startsWith('.git')) continue; // Skip git files
+        
+        const fullPath = path.join(dir, entry.name);
+        const relativePath = path.relative(repoPath, fullPath);
+        
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+        } else {
+          files.push(relativePath);
+        }
+      }
+    }
+    
+    await walk(repoPath);
+    return files.sort();
   }
 
   async cleanup(): Promise<void> {

@@ -114,6 +114,7 @@ class GitContributionScorer {
           businessPurpose,
           contribution.projectContext,
           preCommitRepoPath,
+          contribution.diff,
           hintsGiven
         );
 
@@ -130,8 +131,9 @@ class GitContributionScorer {
 
         if (comparison.isEquivalent || comparison.similarityScore >= config.similarityThreshold) {
           functionalityMatched = true;
-          logger.debug(`Claude Code matched functionality for ${contribution.branch} on attempt ${attempts}`);
+          logger.debug(`✅ Claude Code matched functionality for ${contribution.branch} on attempt ${attempts} (score: ${comparison.similarityScore}, threshold: ${config.similarityThreshold})`);
         } else {
+          logger.debug(`❌ Claude Code didn't match yet for ${contribution.branch} (score: ${comparison.similarityScore}, threshold: ${config.similarityThreshold})`);
           const nextHint = await this.codeComparator.generateProgressiveHint(
             comparison.gaps,
             comparison.differences,
@@ -139,7 +141,7 @@ class GitContributionScorer {
             hintsGiven
           );
           hintsGiven.push(nextHint);
-          logger.debug(`Generated hint ${hintsGiven.length} for ${contribution.branch}: ${nextHint.content}`);
+          logger.debug(`💡 Generated hint ${hintsGiven.length} for ${contribution.branch}: ${nextHint.content}`);
         }
       } catch (error) {
         logger.error(`Error during attempt ${attempts} for ${contribution.branch}: ${error}`);

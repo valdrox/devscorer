@@ -1,6 +1,7 @@
 import { query, type SDKMessage } from '@anthropic-ai/claude-code';
 import fs from 'fs-extra';
 import path from 'path';
+import simpleGit from 'simple-git';
 import { BusinessPurpose, ClaudeCodeResult, Hint } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 import { tempManager } from '../utils/temp-manager.js';
@@ -12,6 +13,7 @@ export class ClaudeRunner {
     businessPurpose: BusinessPurpose,
     projectContext: string,
     preCommitRepoPath: string,
+    originalDiff: string,
     previousHints: Hint[] = []
   ): Promise<ClaudeCodeResult> {
     logger.info('Running Claude Code with business requirements');
@@ -19,7 +21,7 @@ export class ClaudeRunner {
     try {
       // Use the pre-commit repository as the working directory
       this.workingDir = preCommitRepoPath;
-      const prompt = this.buildPrompt(businessPurpose, projectContext, previousHints);
+      const prompt = this.buildPrompt(businessPurpose, projectContext, originalDiff, previousHints);
       
       const result = await this.executeClaudeCode(prompt, preCommitRepoPath);
       
@@ -43,6 +45,7 @@ export class ClaudeRunner {
   private buildPrompt(
     businessPurpose: BusinessPurpose,
     projectContext: string,
+    originalDiff: string,
     previousHints: Hint[]
   ): string {
     logger.debug(`Building Claude Code prompt with ${businessPurpose.requirements.length} requirements and ${previousHints.length} hints`);
@@ -56,24 +59,62 @@ BUSINESS GOAL: ${businessPurpose.summary}
 
 TECHNICAL CONTEXT: ${businessPurpose.technicalContext}
 
-IMPLEMENTATION INSTRUCTIONS:
-1. Implement the required functionality by modifying existing files or creating new ones
-2. Study the existing codebase structure and follow established patterns
-3. Make your changes fit naturally into the existing architecture
+WORKING DIRECTORY SCOPE:
+- You are working in a clean checkout of the repository before the target commit
+- Focus only on source files and avoid exploring node_modules, .git, or build directories
+- Start by using the 'ls' tool to see the repository structure
+- Use 'find . -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"' to locate relevant source files
 
-CODEBASE CONTEXT:
-- All existing files, dependencies, and structure are available
-- Follow the project's existing conventions and patterns
-- Use the same libraries and frameworks already in use`;
+IMPLEMENTATION INSTRUCTIONS:
+1. Start by examining the current project structure with 'ls' and 'find' commands
+2. Focus on the specific files mentioned below that need changes
+3. Study existing code patterns before implementing changes
+4. Avoid searching in node_modules or build directories
+
+FILES THAT NEED CHANGES (based on original implementation):
+${this.extractModifiedFiles(originalDiff)}
+
+CONSTRAINT: Work only with source code files. Do not explore node_modules, .git, dist, build, or other build/dependency directories.
+
+HINT: Focus on the files mentioned above as they were modified in the original solution.`;
 
     if (previousHints.length > 0) {
       prompt += `\n\nCRITICAL HINTS (incorporate these):
 ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     }
 
-    prompt += `\n\nSTART IMPLEMENTING NOW. Use the existing codebase as your foundation and implement the required functionality.`;
+    prompt += `\n\nSTART IMPLEMENTING NOW:
+1. First, run 'pwd' to confirm your working directory
+2. Run 'ls -la' to see the repository structure  
+3. Use the existing codebase as your foundation and implement the required functionality
+4. Stay focused on the source files and avoid node_modules or build directories
+5. CRITICAL: After making any file changes, run 'git status' to verify the changes are detected by git
+6. CRITICAL: If you modify files, run 'git diff' at the end to show what you changed`;
 
     return prompt;
+  }
+
+  private extractModifiedFiles(diff: string): string {
+    const lines = diff.split('\n');
+    const modifiedFiles: string[] = [];
+    
+    for (const line of lines) {
+      if (line.startsWith('diff --git a/')) {
+        const match = line.match(/diff --git a\/(.+) b\/(.+)/);
+        if (match) {
+          const fileName = match[2];
+          if (!modifiedFiles.includes(fileName)) {
+            modifiedFiles.push(fileName);
+          }
+        }
+      }
+    }
+    
+    if (modifiedFiles.length === 0) {
+      return 'No specific files identified - examine the codebase structure';
+    }
+    
+    return modifiedFiles.map(file => `- ${file}`).join('\n');
   }
 
   private async executeClaudeCode(prompt: string, workDir: string): Promise<{
@@ -94,7 +135,22 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         abortController.abort();
       }, 300000); // 5 minutes
 
-      logger.debug(`Executing Claude Code in directory: ${workDir}`);
+      logger.debug(`🔧 Executing Claude Code in directory: ${workDir}`);
+      
+      // Verify the working directory exists and log its contents
+      try {
+        const workDirExists = await fs.pathExists(workDir);
+        if (!workDirExists) {
+          throw new Error(`Working directory does not exist: ${workDir}`);
+        }
+        
+        // Log the contents of the working directory to verify scope
+        const dirContents = await fs.readdir(workDir);
+        logger.debug(`📁 Working directory contents: ${dirContents.slice(0, 10).join(', ')}${dirContents.length > 10 ? ` (and ${dirContents.length - 10} more)` : ''}`);
+      } catch (error) {
+        logger.error(`❌ Working directory verification failed: ${error}`);
+        throw error;
+      }
       logger.debug(`Claude Code prompt: ${prompt}`);
 
       for await (const message of query({
@@ -145,13 +201,13 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       }
 
       if (resultMessage.subtype === 'success') {
-        // Extract generated code from the working directory
-        logger.debug(`✅ Claude Code completed successfully, extracting generated files...`);
-        const generatedCode = await this.extractGeneratedCode(workDir);
-        logger.debug(`📁 Generated code (${generatedCode.length} chars): ${generatedCode}`);
+        // Extract generated diff from the working directory
+        logger.debug(`✅ Claude Code completed successfully, extracting generated diff...`);
+        const generatedDiff = await this.extractGeneratedDiff(workDir);
+        logger.debug(`📄 Generated diff (${generatedDiff.length} chars): ${generatedDiff}`);
         
         return {
-          code: generatedCode,
+          code: generatedDiff,
           success: true,
           errors: [],
           warnings: []
@@ -186,46 +242,164 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     }
   }
 
-  private async extractGeneratedCode(workDir: string): Promise<string> {
-    const srcDir = path.join(workDir, 'src');
-    const codeFiles: string[] = [];
-
-    if (await fs.pathExists(srcDir)) {
-      const files = await this.getAllFiles(srcDir);
-      logger.debug(`📂 Found ${files.length} generated files in src/`);
+  private async extractGeneratedDiff(workDir: string): Promise<string> {
+    try {
+      // Create a git instance for the working directory
+      const git = simpleGit(workDir);
       
-      for (const file of files) {
-        const relativePath = path.relative(workDir, file);
-        const content = await fs.readFile(file, 'utf-8');
-        logger.debug(`📄 Generated file: ${relativePath} (${content.length} chars)`);
+      // First, let's debug the actual directory contents
+      logger.debug(`🔍 Investigating working directory: ${workDir}`);
+      const dirExists = await fs.pathExists(workDir);
+      logger.debug(`📁 Working directory exists: ${dirExists}`);
+      
+      if (dirExists) {
+        const dirContents = await fs.readdir(workDir);
+        logger.debug(`📁 Directory contents: ${dirContents.join(', ')}`);
         
-        codeFiles.push(`// File: ${relativePath}`);
-        codeFiles.push(content);
-        codeFiles.push(''); // Empty line between files
+        // Check if this looks like the right repository by looking for key files
+        const hasGit = dirContents.includes('.git');
+        const hasSource = dirContents.includes('source');
+        const hasPackageJson = dirContents.includes('package.json');
+        logger.debug(`📁 Repository indicators - .git: ${hasGit}, source/: ${hasSource}, package.json: ${hasPackageJson}`);
       }
-    }
-
-    // Also check for files in the root directory
-    const rootFiles = await this.getAllFiles(workDir);
-    for (const file of rootFiles) {
-      const fileName = path.basename(file);
-      // Skip package.json and .gitignore that we created
-      if (fileName !== 'package.json' && fileName !== '.gitignore' && this.isCodeFile(fileName)) {
-        const content = await fs.readFile(file, 'utf-8');
-        codeFiles.push(`// File: ${fileName}`);
-        codeFiles.push(content);
-        codeFiles.push('');
+      
+      // Check git status for debugging
+      const status = await git.status();
+      logger.debug(`🔍 Git status in working directory:`);
+      logger.debug(`  📄 Modified files: ${status.modified.length > 0 ? status.modified.join(', ') : 'none'}`);
+      logger.debug(`  📄 Untracked files: ${status.not_added.length > 0 ? status.not_added.join(', ') : 'none'}`);
+      logger.debug(`  📄 Staged files: ${status.staged.length > 0 ? status.staged.join(', ') : 'none'}`);
+      logger.debug(`  📄 Deleted files: ${status.deleted.length > 0 ? status.deleted.join(', ') : 'none'}`);
+      
+      // Get the diff of all changes made by Claude Code
+      const diff = await git.diff();
+      logger.debug(`📊 Raw git diff length: ${diff.length} characters`);
+      
+      if (!diff || diff.trim().length === 0) {
+        logger.warn('⚠️ No unstaged changes detected, trying alternative approaches...');
+        
+        // Check for untracked files and add them
+        if (status.not_added.length > 0) {
+          logger.debug(`📄 Found ${status.not_added.length} untracked files: ${status.not_added.join(', ')}`);
+          
+          // Add untracked files to see them in diff
+          await git.add('.');
+          const diffWithUntracked = await git.diff(['--cached']);
+          logger.debug(`📊 Cached git diff length: ${diffWithUntracked.length} characters`);
+          
+          if (diffWithUntracked && diffWithUntracked.trim().length > 0) {
+            logger.debug('✅ Successfully captured diff including untracked files');
+            return diffWithUntracked;
+          }
+        }
+        
+        // Also check if there are already staged changes
+        const stagedDiff = await git.diff(['--cached']);
+        logger.debug(`📊 Already staged diff length: ${stagedDiff.length} characters`);
+        
+        if (stagedDiff && stagedDiff.trim().length > 0) {
+          logger.debug('✅ Found staged changes, using those');
+          return stagedDiff;
+        }
+        
+        // If still no changes, try diff with HEAD to see all changes from the initial state
+        const diffFromHead = await git.diff(['HEAD']);
+        logger.debug(`📊 Diff from HEAD length: ${diffFromHead.length} characters`);
+        
+        if (diffFromHead && diffFromHead.trim().length > 0) {
+          logger.debug('✅ Found changes from HEAD, using those');
+          return diffFromHead;
+        }
+        
+        // As a last resort, try to manually check specific files that Claude mentioned
+        logger.warn('🔍 No git changes detected, attempting manual file comparison...');
+        const manualDiff = await this.generateManualDiff(workDir);
+        if (manualDiff) {
+          logger.debug('✅ Generated manual diff from file changes');
+          return manualDiff;
+        }
+        
+        throw new Error('No changes generated by Claude Code (no diff output from any method)');
       }
+      
+      logger.debug(`✅ Successfully extracted git diff with ${diff.split('\n').length} lines`);
+      return diff;
+    } catch (error) {
+      logger.error(`Failed to extract git diff: ${error}`);
+      throw new Error(`Failed to extract git diff: ${error}`);
     }
-
-    if (codeFiles.length === 0) {
-      throw new Error('No code files generated by Claude Code');
-    }
-
-    return codeFiles.join('\n');
   }
 
-  private async getAllFiles(dir: string): Promise<string[]> {
+  private async generateManualDiff(workDir: string): Promise<string | null> {
+    try {
+      // This is a fallback to manually check common file locations that might have been modified
+      const git = simpleGit(workDir);
+      
+      // Get the original state by checking what files exist
+      const allFiles = await this.getAllFilesRecursively(workDir);
+      logger.debug(`🔍 Found ${allFiles.length} files in working directory`);
+      
+      // For each file, check if it differs from the git HEAD
+      const changedFiles: string[] = [];
+      
+      for (const file of allFiles) {
+        try {
+          const relativePath = path.relative(workDir, file);
+          // Skip .git directory files
+          if (relativePath.startsWith('.git/')) continue;
+          
+          // Check if this file exists in git and if it's different
+          const headContent = await git.show([`HEAD:${relativePath}`]).catch(() => null);
+          const currentContent = await fs.readFile(file, 'utf-8');
+          
+          if (headContent !== null && headContent !== currentContent) {
+            changedFiles.push(relativePath);
+            logger.debug(`📄 Detected manual change in: ${relativePath}`);
+          } else if (headContent === null) {
+            // This is a new file
+            changedFiles.push(relativePath);
+            logger.debug(`📄 Detected new file: ${relativePath}`);
+          }
+        } catch (error) {
+          // Ignore individual file errors
+        }
+      }
+      
+      if (changedFiles.length > 0) {
+        logger.debug(`📄 Manual detection found ${changedFiles.length} changed files: ${changedFiles.join(', ')}`);
+        
+        // Generate a simple diff for these files
+        let manualDiff = '';
+        for (const file of changedFiles) {
+          try {
+            const currentContent = await fs.readFile(path.join(workDir, file), 'utf-8');
+            manualDiff += `diff --git a/${file} b/${file}\n`;
+            manualDiff += `--- a/${file}\n`;
+            manualDiff += `+++ b/${file}\n`;
+            manualDiff += `@@ -1,1 +1,${currentContent.split('\n').length} @@\n`;
+            
+            // Add the content as additions (simplified diff)
+            const lines = currentContent.split('\n');
+            for (const line of lines) {
+              manualDiff += `+${line}\n`;
+            }
+            manualDiff += '\n';
+          } catch (error) {
+            logger.debug(`Error generating manual diff for ${file}: ${error}`);
+          }
+        }
+        
+        return manualDiff;
+      }
+      
+      return null;
+    } catch (error) {
+      logger.debug(`Manual diff generation failed: ${error}`);
+      return null;
+    }
+  }
+
+  private async getAllFilesRecursively(dir: string): Promise<string[]> {
     const files: string[] = [];
     
     if (!(await fs.pathExists(dir))) {
@@ -239,9 +413,9 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       const stat = await fs.stat(fullPath);
       
       if (stat.isDirectory() && item !== 'node_modules' && item !== '.git') {
-        const subFiles = await this.getAllFiles(fullPath);
+        const subFiles = await this.getAllFilesRecursively(fullPath);
         files.push(...subFiles);
-      } else if (this.isCodeFile(item)) {
+      } else if (stat.isFile()) {
         files.push(fullPath);
       }
     }
@@ -249,20 +423,6 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     return files;
   }
 
-  private isCodeFile(filename: string): boolean {
-    const codeExtensions = [
-      '.js', '.ts', '.jsx', '.tsx',
-      '.py', '.java', '.cpp', '.c',
-      '.cs', '.go', '.rs', '.php',
-      '.rb', '.swift', '.kt', '.scala',
-      '.html', '.css', '.scss', '.less',
-      '.json', '.xml', '.yaml', '.yml',
-      '.md', '.txt', '.sql'
-    ];
-    
-    const ext = path.extname(filename).toLowerCase();
-    return codeExtensions.includes(ext);
-  }
 
   async cleanup(): Promise<void> {
     if (this.workingDir && await fs.pathExists(this.workingDir)) {

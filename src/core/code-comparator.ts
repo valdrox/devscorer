@@ -13,14 +13,15 @@ export class CodeComparator {
   }
 
   async compareFunctionality(
-    originalCode: string,
-    aiGeneratedCode: string,
+    originalDiff: string,
+    aiGeneratedDiff: string,
     requirements: string[]
   ): Promise<FunctionalityComparison> {
-    logger.info('Comparing functionality between original and AI-generated code');
+    logger.info('🔍 Comparing functionality between original diff and AI-generated diff');
 
     try {
-      const comparisonPrompt = this.buildComparisonPrompt(originalCode, aiGeneratedCode, requirements);
+      const comparisonPrompt = this.buildComparisonPrompt(originalDiff, aiGeneratedDiff, requirements);
+      logger.debug('📊 Comparison prompt: ' + comparisonPrompt);
       
       const response = await this.anthropic.messages.create({
         model: config.claudeModel,
@@ -34,27 +35,39 @@ export class CodeComparator {
       });
 
       const analysisText = response.content[0].type === 'text' ? response.content[0].text : '';
-      return this.parseComparisonResult(analysisText);
+      const comparison = this.parseComparisonResult(analysisText);
+      
+      // Log detailed comparison results
+      logger.debug(`📈 Similarity score: ${comparison.similarityScore}`);
+      logger.debug(`✅ Is equivalent: ${comparison.isEquivalent}`);
+      if (comparison.gaps.length > 0) {
+        logger.debug(`❌ Gaps found: ${comparison.gaps.join('; ')}`);
+      }
+      if (comparison.differences.length > 0) {
+        logger.debug(`⚠️ Differences: ${comparison.differences.join('; ')}`);
+      }
+      
+      return comparison;
     } catch (error) {
-      logger.error(`Failed to compare functionality: ${error}`);
+      logger.error(`💥 Failed to compare functionality: ${error}`);
       return this.createFallbackComparison();
     }
   }
 
-  private buildComparisonPrompt(originalCode: string, aiGeneratedCode: string, requirements: string[]): string {
-    return `Compare these two code implementations to determine if they provide equivalent functionality.
+  private buildComparisonPrompt(originalDiff: string, aiGeneratedDiff: string, requirements: string[]): string {
+    return `Compare these two git diffs to determine if they provide equivalent functionality changes.
 
 REQUIREMENTS TO FULFILL:
 ${requirements.map((req, idx) => `${idx + 1}. ${req}`).join('\n')}
 
-ORIGINAL IMPLEMENTATION:
-\`\`\`
-${originalCode.substring(0, 3000)}
+ORIGINAL DIFF (what the developer implemented):
+\`\`\`diff
+${originalDiff.substring(0, 3000)}
 \`\`\`
 
-AI-GENERATED IMPLEMENTATION:
-\`\`\`
-${aiGeneratedCode.substring(0, 3000)}
+AI-GENERATED DIFF (what Claude Code implemented):
+\`\`\`diff
+${aiGeneratedDiff.substring(0, 3000)}
 \`\`\`
 
 Please analyze and provide your assessment in this exact format:
@@ -73,11 +86,12 @@ DIFFERENCES: [List significant differences in approach or implementation]
 - Difference 2
 (etc.)
 
-Focus on functional equivalence rather than code style. Consider:
-1. Do both implementations satisfy the same requirements?
-2. Do they handle the same inputs and produce similar outputs?
-3. Do they handle edge cases similarly?
-4. Are core business logic patterns equivalent?`;
+Focus on functional equivalence of the CHANGES rather than code style. Consider:
+1. Do both diffs satisfy the same requirements?
+2. Do they modify the same types of functionality?
+3. Do they handle the same use cases and edge cases?
+4. Are the core changes functionally equivalent even if implemented differently?
+5. Note: Different file paths or variable names are acceptable if the functionality is equivalent`;
   }
 
   private parseComparisonResult(analysisText: string): FunctionalityComparison {
@@ -140,7 +154,7 @@ Focus on functional equivalence rather than code style. Consider:
     hintLevel: number,
     previousHints: Hint[]
   ): Promise<Hint> {
-    logger.info(`Generating hint at level ${hintLevel}`);
+    logger.info(`💡 Generating hint at level ${hintLevel}`);
 
     try {
       const hintPrompt = this.buildHintPrompt(gaps, differences, hintLevel, previousHints);
@@ -248,9 +262,9 @@ Format your response as just the hint text, nothing else.`;
     };
   }
 
-  calculateSimilarityScore(originalCode: string, aiGeneratedCode: string): number {
-    const original = this.normalizeCode(originalCode);
-    const generated = this.normalizeCode(aiGeneratedCode);
+  calculateSimilarityScore(originalDiff: string, aiGeneratedDiff: string): number {
+    const original = this.normalizeDiff(originalDiff);
+    const generated = this.normalizeDiff(aiGeneratedDiff);
     
     if (original === generated) {
       return 1.0;
@@ -271,13 +285,21 @@ Format your response as just the hint text, nothing else.`;
     return (lengthSimilarity + charSimilarity) / 2;
   }
 
-  private normalizeCode(code: string): string {
-    return code
-      .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
-      .replace(/\/\/.*$/gm, '') // Remove line comments
+  private normalizeDiff(diff: string): string {
+    return diff
+      .split('\n')
+      .filter(line => {
+        // Keep only the actual change lines, ignore diff metadata
+        return line.startsWith('+') || line.startsWith('-') && 
+               !line.startsWith('+++') && !line.startsWith('---');
+      })
+      .map(line => {
+        // Remove the +/- prefix and normalize whitespace
+        return line.substring(1).trim().toLowerCase();
+      })
+      .join('\n')
       .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim()
-      .toLowerCase();
+      .trim();
   }
 
   private countCommonCharacters(str1: string, str2: string): number {
