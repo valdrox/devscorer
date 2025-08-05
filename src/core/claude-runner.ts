@@ -8,6 +8,7 @@ import { tempManager } from '../utils/temp-manager.js';
 
 export class ClaudeRunner {
   private workingDir: string = '';
+  private sessionId: string | null = null;
 
   async runClaudeCode(
     businessPurpose: BusinessPurpose,
@@ -21,9 +22,22 @@ export class ClaudeRunner {
     try {
       // Use the pre-commit repository as the working directory
       this.workingDir = preCommitRepoPath;
-      const prompt = this.buildPrompt(businessPurpose, projectContext, originalDiff, previousHints);
+      
+      let prompt: string;
+      const isResumingSession = this.sessionId !== null && previousHints.length > 0;
+      
+      if (isResumingSession) {
+        // For resumed sessions, just pass the latest hint (no additional context needed)
+        const latestHint = previousHints[previousHints.length - 1];
+        prompt = latestHint.content;
+        logger.debug('Resuming Claude Code session with new hint');
+      } else {
+        // First attempt - build full prompt
+        prompt = this.buildPrompt(businessPurpose, projectContext, originalDiff, previousHints);
+        logger.debug('Starting new Claude Code session');
+      }
 
-      const result = await this.executeClaudeCode(prompt, preCommitRepoPath);
+      const result = await this.executeClaudeCode(prompt, preCommitRepoPath, isResumingSession);
 
       return {
         code: result.code,
@@ -61,36 +75,17 @@ BUSINESS GOAL: ${businessPurpose.summary}
 TECHNICAL CONTEXT: ${businessPurpose.technicalContext}
 
 WORKING DIRECTORY SCOPE:
-- You are working in a clean checkout of the repository before the target commit
 - Focus only on source files and avoid exploring node_modules, .git, or build directories
-- Start by using the 'ls' tool to see the repository structure
-- Use 'find . -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx"' to locate relevant source files
 
-IMPLEMENTATION INSTRUCTIONS:
-1. Start by examining the current project structure with 'ls' and 'find' commands
-2. Focus on the specific files mentioned below that need changes
-3. Study existing code patterns before implementing changes
-4. Avoid searching in node_modules or build directories
+`;
 
-FILES THAT NEED CHANGES (based on original implementation):
-${this.extractModifiedFiles(originalDiff)}
-
-CONSTRAINT: Work only with source code files. Do not explore node_modules, .git, dist, build, or other build/dependency directories.
-
-HINT: Focus on the files mentioned above as they were modified in the original solution.`;
-
+    // Only include hints for the first attempt - subsequent attempts will be handled via session resume
     if (previousHints.length > 0) {
       prompt += `\n\nCRITICAL HINTS (incorporate these):
 ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     }
 
-    prompt += `\n\nSTART IMPLEMENTING NOW:
-1. First, run 'pwd' to confirm your working directory
-2. Run 'ls -la' to see the repository structure  
-3. Use the existing codebase as your foundation and implement the required functionality
-4. Stay focused on the source files and avoid node_modules or build directories
-5. CRITICAL: After making any file changes, run 'git status' to verify the changes are detected by git
-6. CRITICAL: If you modify files, run 'git diff' at the end to show what you changed`;
+    prompt += `\n\nSTART IMPLEMENTING NOW`;
 
     return prompt;
   }
@@ -120,7 +115,8 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
 
   private async executeClaudeCode(
     prompt: string,
-    workDir: string
+    workDir: string,
+    isResumingSession: boolean = false
   ): Promise<{
     code: string;
     success: boolean;
@@ -157,16 +153,30 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       }
       logger.debug(`Claude Code prompt: ${prompt}`);
 
+      const queryOptions: any = {
+        maxTurns: 30, // Increased to allow more complex implementations
+        cwd: workDir,
+        permissionMode: 'bypassPermissions',
+      };
+
+      // Add resume option if we're resuming a session
+      if (isResumingSession && this.sessionId) {
+        queryOptions.resume = this.sessionId;
+        logger.debug(`Resuming Claude Code session: ${this.sessionId}`);
+      }
+
       for await (const message of query({
         prompt,
         abortController,
-        options: {
-          maxTurns: 30, // Increased to allow more complex implementations
-          cwd: workDir,
-          permissionMode: 'bypassPermissions',
-        },
+        options: queryOptions,
       })) {
         messages.push(message);
+
+        // Capture session ID from any message (if not already captured)
+        if (!this.sessionId && 'session_id' in message) {
+          this.sessionId = message.session_id;
+          logger.debug(`Captured Claude Code session ID: ${this.sessionId}`);
+        }
 
         // Log detailed progress for debugging
         if (message.type === 'assistant') {
@@ -430,14 +440,14 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
   }
 
   async cleanup(): Promise<void> {
-    if (this.workingDir && (await fs.pathExists(this.workingDir))) {
-      try {
-        await tempManager.cleanupDirectory(this.workingDir);
-        logger.debug(`Cleaned up Claude Code working directory: ${this.workingDir}`);
-      } catch (error) {
-        logger.warn(`Failed to cleanup working directory: ${error}`);
-      }
+    // Reset session ID for next analysis
+    if (this.sessionId) {
+      logger.debug(`Resetting Claude Code session ID: ${this.sessionId}`);
+      this.sessionId = null;
     }
+
+    // Note: Working directory cleanup is handled by the caller (main analysis loop)
+    // since Claude Code sessions need to persist across hint attempts in the same directory
   }
 
   async isClaudeCodeAvailable(): Promise<boolean> {

@@ -158,9 +158,10 @@ class GitContributionScorer {
         logger.error(`Error during attempt ${attempts} for ${contribution.branch}: ${error}`);
         break;
       }
-
-      await this.claudeRunner.cleanup();
     }
+
+    // Clean up Claude Code session after all attempts are complete
+    await this.claudeRunner.cleanup();
 
     // Clean up the pre-commit repository
     try {
