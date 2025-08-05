@@ -17,10 +17,12 @@ export class ScoringEngine {
     const difficultyBonus = this.calculateDifficultyBonus(hintsNeeded, attempts, functionalityMatched);
 
     const rawScore = baseComplexity + hintComplexity + attemptPenalty + difficultyBonus;
-    
+
     const normalizedScore = Math.max(0, Math.min(100, rawScore));
 
-    logger.debug(`Score components for ${contribution.branch}: base=${baseComplexity}, hints=${hintComplexity}, attempts=${attemptPenalty}, difficulty=${difficultyBonus}, final=${normalizedScore}`);
+    logger.debug(
+      `Score components for ${contribution.branch}: base=${baseComplexity}, hints=${hintComplexity}, attempts=${attemptPenalty}, difficulty=${difficultyBonus}, final=${normalizedScore}`
+    );
 
     return Math.round(normalizedScore * 100) / 100;
   }
@@ -33,9 +35,9 @@ export class ScoringEngine {
     let baseScore = 0;
 
     baseScore += Math.min(linesChanged * 0.1, 20);
-    
+
     baseScore += Math.min(filesModified * 2, 15);
-    
+
     baseScore += Math.min(commitCount * 1.5, 10);
 
     const codeComplexity = this.analyzeCodeComplexity(contribution.diff);
@@ -80,13 +82,13 @@ export class ScoringEngine {
       { pattern: /\.map\s*\(/g, weight: 1 },
       { pattern: /\.filter\s*\(/g, weight: 1 },
       { pattern: /\.reduce\s*\(/g, weight: 2 },
-      { pattern: /import\s+.*from/g, weight: 0.5 }
+      { pattern: /import\s+.*from/g, weight: 0.5 },
     ];
 
     for (const line of lines) {
       if (line.startsWith('+') && !line.startsWith('+++')) {
         const codeLine = line.substring(1);
-        
+
         for (const { pattern, weight } of complexPatterns) {
           const matches = codeLine.match(pattern);
           if (matches) {
@@ -145,7 +147,7 @@ export class ScoringEngine {
     let bonus = 0;
 
     bonus += Math.min(hintsNeeded * 3, 20);
-    
+
     if (attempts > 5) {
       bonus += 5;
     }
@@ -171,13 +173,13 @@ export class ScoringEngine {
       branch: contribution.branch,
       description: businessPurpose.summary,
       score: finalScore,
-      hintsNeeded: hintsNeeded,
+      hintsNeeded,
       details: {
-        attempts: attempts,
-        hints: hints,
+        attempts,
+        hints,
         baseComplexity: this.calculateBaseComplexity(contribution),
-        aiDifficulty: hintsNeeded > 0 ? Math.min(hintsNeeded * 10, 50) : 0
-      }
+        aiDifficulty: hintsNeeded > 0 ? Math.min(hintsNeeded * 10, 50) : 0,
+      },
     };
   }
 
@@ -196,7 +198,7 @@ export class ScoringEngine {
       daysCovered,
       totalContributions: developerScores.length,
       developerScores: developerScores.sort((a, b) => b.score - a.score),
-      summary
+      summary,
     };
   }
 
@@ -209,7 +211,7 @@ export class ScoringEngine {
       return {
         topPerformers: [],
         averageScore: 0,
-        complexityDistribution: {}
+        complexityDistribution: {},
       };
     }
 
@@ -219,14 +221,14 @@ export class ScoringEngine {
     for (const score of scores) {
       const currentTotal = developerTotals.get(score.developer) || 0;
       const currentCount = developerCounts.get(score.developer) || 0;
-      
+
       developerTotals.set(score.developer, currentTotal + score.score);
       developerCounts.set(score.developer, currentCount + 1);
     }
 
     const developerAverages = Array.from(developerTotals.entries()).map(([developer, total]) => ({
       developer,
-      average: total / (developerCounts.get(developer) || 1)
+      average: total / (developerCounts.get(developer) || 1),
     }));
 
     developerAverages.sort((a, b) => b.average - a.average);
@@ -241,7 +243,7 @@ export class ScoringEngine {
     return {
       topPerformers,
       averageScore,
-      complexityDistribution
+      complexityDistribution,
     };
   }
 
@@ -251,7 +253,7 @@ export class ScoringEngine {
       'simple (11-25)': 0,
       'moderate (26-50)': 0,
       'complex (51-75)': 0,
-      'expert (76-100)': 0
+      'expert (76-100)': 0,
     };
 
     for (const score of scores) {
@@ -275,7 +277,7 @@ export class ScoringEngine {
     const lines: string[] = [];
 
     lines.push('='.repeat(80));
-    lines.push(`GIT CONTRIBUTION SCORER REPORT`);
+    lines.push('GIT CONTRIBUTION SCORER REPORT');
     lines.push('='.repeat(80));
     lines.push(`Repository: ${report.repositoryUrl}`);
     lines.push(`Analysis Date: ${report.analysisDate.toLocaleDateString()}`);

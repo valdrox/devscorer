@@ -1,9 +1,10 @@
-import simpleGit, { SimpleGit, LogOptions } from 'simple-git';
+import simpleGit, { SimpleGit } from 'simple-git';
 import fs from 'fs-extra';
 import path from 'path';
 import tmp from 'tmp';
 import { GitCommit, GitContribution } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import { RepositoryError, GitAnalysisError, ErrorHandler } from '../utils/error-handler.js';
 
 export class GitAnalyzer {
   private git: SimpleGit;
@@ -14,82 +15,102 @@ export class GitAnalyzer {
   }
 
   async cloneRepository(repoUrl: string): Promise<string> {
-    const tempDir = tmp.dirSync({ prefix: 'devscorer-', unsafeCleanup: true });
-    this.repoPath = tempDir.name;
-    
-    logger.info(`Cloning repository ${repoUrl} to ${this.repoPath}`);
-    
-    try {
-      await this.git.clone(repoUrl, this.repoPath);
-      this.git = simpleGit(this.repoPath);
-      logger.info(`Successfully cloned repository to ${this.repoPath}`);
-      return this.repoPath;
-    } catch (error) {
-      logger.error(`Failed to clone repository: ${error}`);
-      throw new Error(`Failed to clone repository: ${error}`);
-    }
+    return ErrorHandler.wrapAsync(
+      async () => {
+        const tempDir = tmp.dirSync({ prefix: 'devscorer-', unsafeCleanup: true });
+        this.repoPath = tempDir.name;
+
+        logger.info('Cloning repository', { repository: repoUrl, destination: this.repoPath });
+
+        try {
+          await this.git.clone(repoUrl, this.repoPath);
+          this.git = simpleGit(this.repoPath);
+          logger.info('Successfully cloned repository', { repository: repoUrl, path: this.repoPath });
+          return this.repoPath;
+        } catch (error) {
+          throw new RepositoryError(`Failed to clone repository: ${repoUrl}`, {
+            repository: repoUrl,
+            destination: this.repoPath,
+            originalError: error,
+          });
+        }
+      },
+      'clone-repository',
+      { repository: repoUrl }
+    );
   }
 
   async getRecentContributions(days: number = 7): Promise<GitContribution[]> {
     if (!this.repoPath) {
-      throw new Error('Repository not cloned. Call cloneRepository first.');
+      throw new GitAnalysisError('Repository not cloned. Call cloneRepository first.');
     }
 
-    const sinceDate = new Date();
-    sinceDate.setDate(sinceDate.getDate() - days);
+    return ErrorHandler.wrapAsync(
+      async () => {
+        const sinceDate = new Date();
+        sinceDate.setDate(sinceDate.getDate() - days);
+        const sinceDateStr = sinceDate.toISOString().split('T')[0];
 
-    logger.info(`Analyzing contributions from the last ${days} days`);
+        logger.info('Analyzing contributions', { days, since: sinceDateStr });
 
-    try {
-      // Use raw git command for better date handling
-      // Look for individual commits (non-merge commits are more common in modern workflows)
-      const sinceDateStr = sinceDate.toISOString().split('T')[0];
-      const logResult = await this.git.raw([
-        'log',
-        '--since=' + sinceDateStr,
-        '--pretty=format:%H|%ai|%s|%an|%ae',
-        '--no-merges' // Focus on individual commits rather than merge commits
-      ]);
-      
-      const contributions: GitContribution[] = [];
-      const commitLines = logResult.trim().split('\n').filter(line => line.length > 0);
+        try {
+          // Use raw git command for better date handling
+          // Look for individual commits (non-merge commits are more common in modern workflows)
+          const logResult = await this.git.raw([
+            'log',
+            `--since=${sinceDateStr}`,
+            '--pretty=format:%H|%ai|%s|%an|%ae',
+            '--no-merges', // Focus on individual commits rather than merge commits
+          ]);
 
-      for (const line of commitLines) {
-        const [hash, date, message, authorName, authorEmail] = line.split('|');
-        const commit = {
-          hash,
-          date,
-          message,
-          author_name: authorName,
-          author_email: authorEmail
-        };
+          const contributions: GitContribution[] = [];
+          const commitLines = logResult
+            .trim()
+            .split('\n')
+            .filter(line => line.length > 0);
 
-        // Since we're looking at regular commits now, treat them as individual contributions
-        // Skip very small commits (like version bumps)
-        if (this.isSignificantCommit(commit.message)) {
-          const contribution = await this.analyzeRegularCommit(commit);
-          if (contribution) {
-            contributions.push(contribution);
+          for (const line of commitLines) {
+            const [hash, date, message, authorName, authorEmail] = line.split('|');
+            const commit = {
+              hash,
+              date,
+              message,
+              author_name: authorName,
+              author_email: authorEmail,
+            };
+
+            // Since we're looking at regular commits now, treat them as individual contributions
+            // Skip very small commits (like version bumps)
+            if (this.isSignificantCommit(commit.message)) {
+              const contribution = await this.analyzeRegularCommit(commit);
+              if (contribution) {
+                contributions.push(contribution);
+              }
+            }
           }
-        }
-      }
 
-      logger.info(`Found ${contributions.length} significant commits in the last ${days} days`);
-      return contributions;
-    } catch (error) {
-      logger.error(`Failed to get recent contributions: ${error}`);
-      throw new Error(`Failed to get recent contributions: ${error}`);
-    }
+          logger.info('Found significant commits', {
+            count: contributions.length,
+            days,
+            totalCommits: commitLines.length,
+          });
+          return contributions;
+        } catch (error) {
+          throw new GitAnalysisError(`Failed to analyze git history for the last ${days} days`, {
+            days,
+            since: sinceDateStr,
+            repoPath: this.repoPath,
+          });
+        }
+      },
+      'get-recent-contributions',
+      { days }
+    );
   }
 
   private isMergeCommit(message: string): boolean {
-    const mergePatterns = [
-      /^Merge pull request/,
-      /^Merge branch/,
-      /^Merge remote-tracking branch/,
-      /^Merged in/
-    ];
-    
+    const mergePatterns = [/^Merge pull request/, /^Merge branch/, /^Merge remote-tracking branch/, /^Merged in/];
+
     return mergePatterns.some(pattern => pattern.test(message));
   }
 
@@ -106,7 +127,7 @@ export class GitAnalyzer {
       /^fix typo/i,
       /^formatting/i,
       /^lint/i,
-      /^chore:/i
+      /^chore:/i,
     ];
 
     if (skipPatterns.some(pattern => pattern.test(message))) {
@@ -124,7 +145,7 @@ export class GitAnalyzer {
       const diff = await this.getMergeDiff(commit.hash);
       const linesChanged = this.countLinesChanged(diff);
       const projectContext = await this.getProjectContext();
-      
+
       // Get the pre-commit hash (parent of this commit)
       const preCommitHash = await this.git.raw(['rev-parse', `${commit.hash}~1`]);
 
@@ -133,11 +154,11 @@ export class GitAnalyzer {
         author: commit.author_name || 'Unknown',
         date: new Date(commit.date),
         commits: mergeCommits,
-        diff: diff,
-        linesChanged: linesChanged,
-        projectContext: projectContext,
+        diff,
+        linesChanged,
+        projectContext,
         commitHash: commit.hash,
-        preCommitHash: preCommitHash.trim()
+        preCommitHash: preCommitHash.trim(),
       };
     } catch (error) {
       logger.warn(`Failed to analyze merge commit ${commit.hash}: ${error}`);
@@ -152,7 +173,7 @@ export class GitAnalyzer {
       const diff = await this.getCommitDiff(commit.hash);
       const linesChanged = this.countLinesChanged(diff);
       const projectContext = await this.getProjectContext();
-      
+
       // Get the pre-commit hash (parent of this commit)
       const preCommitHash = await this.git.raw(['rev-parse', `${commit.hash}~1`]);
 
@@ -162,7 +183,7 @@ export class GitAnalyzer {
         message: commit.message,
         author: commit.author_name || 'Unknown',
         date: new Date(commit.date),
-        diff: diff
+        diff,
       };
 
       return {
@@ -170,11 +191,11 @@ export class GitAnalyzer {
         author: commit.author_name || 'Unknown',
         date: new Date(commit.date),
         commits: [singleCommit],
-        diff: diff,
-        linesChanged: linesChanged,
-        projectContext: projectContext,
+        diff,
+        linesChanged,
+        projectContext,
         commitHash: commit.hash,
-        preCommitHash: preCommitHash.trim()
+        preCommitHash: preCommitHash.trim(),
       };
     } catch (error) {
       logger.warn(`Failed to analyze commit ${commit.hash}: ${error}`);
@@ -193,11 +214,7 @@ export class GitAnalyzer {
   }
 
   private extractBranchName(mergeMessage: string): string {
-    const patterns = [
-      /Merge pull request #\d+ from [^\/]+\/(.+)/,
-      /Merge branch '([^']+)'/,
-      /Merged in ([^\s]+)/
-    ];
+    const patterns = [/Merge pull request #\d+ from [^/]+\/(.+)/, /Merge branch '([^']+)'/, /Merged in ([^\s]+)/];
 
     for (const pattern of patterns) {
       const match = mergeMessage.match(pattern);
@@ -213,7 +230,7 @@ export class GitAnalyzer {
     try {
       const parentHashes = await this.git.raw(['log', '--pretty=%P', '-n', '1', mergeHash]);
       const parents = parentHashes.trim().split(' ');
-      
+
       if (parents.length < 2) {
         return [];
       }
@@ -231,7 +248,7 @@ export class GitAnalyzer {
         message: commit.message,
         author: commit.author_name || 'Unknown',
         date: new Date(commit.date),
-        diff: ''
+        diff: '',
       }));
     } catch (error) {
       logger.warn(`Failed to get merge commit details for ${mergeHash}: ${error}`);
@@ -243,7 +260,7 @@ export class GitAnalyzer {
     try {
       const parentHashes = await this.git.raw(['log', '--pretty=%P', '-n', '1', mergeHash]);
       const parents = parentHashes.trim().split(' ');
-      
+
       if (parents.length < 2) {
         return '';
       }
@@ -284,7 +301,7 @@ export class GitAnalyzer {
         const packageJson = await fs.readJson(packageJsonPath);
         context.push(`Project: ${packageJson.name || 'Unknown'}`);
         context.push(`Description: ${packageJson.description || 'No description'}`);
-        
+
         if (packageJson.dependencies) {
           const mainDeps = Object.keys(packageJson.dependencies).slice(0, 10);
           context.push(`Main dependencies: ${mainDeps.join(', ')}`);
@@ -310,7 +327,11 @@ export class GitAnalyzer {
     }
   }
 
-  private async getDirectoryStructure(dirPath: string, maxDepth: number = 2, currentDepth: number = 0): Promise<string | null> {
+  private async getDirectoryStructure(
+    dirPath: string,
+    maxDepth: number = 2,
+    currentDepth: number = 0
+  ): Promise<string | null> {
     if (currentDepth >= maxDepth || !(await fs.pathExists(dirPath))) {
       return null;
     }
@@ -322,7 +343,7 @@ export class GitAnalyzer {
       for (const item of items.slice(0, 10)) {
         const itemPath = path.join(dirPath, item);
         const stat = await fs.stat(itemPath);
-        
+
         if (stat.isDirectory()) {
           structure.push(`${item}/`);
         } else {
@@ -343,33 +364,35 @@ export class GitAnalyzer {
 
     const tempDir = tmp.dirSync({ prefix: 'precommit-', unsafeCleanup: true });
     const preCommitPath = tempDir.name;
-    
+
     logger.debug(`Creating pre-commit repository at ${preCommitPath} for commit ${commitHash}`);
-    
+
     try {
       // Clone the current repository to a new location
       await this.git.clone(this.repoPath, preCommitPath);
-      
+
       // Switch to the new repository
       const preCommitGit = simpleGit(preCommitPath);
-      
+
       // Get the parent commit (the state before this commit)
       const preCommitHash = await preCommitGit.raw(['rev-parse', `${commitHash}~1`]);
       const cleanPreCommitHash = preCommitHash.trim();
-      
+
       // Checkout to the pre-commit state
       await preCommitGit.checkout(cleanPreCommitHash);
-      
+
       logger.debug(`Pre-commit repository created and checked out to ${cleanPreCommitHash}`);
-      
+
       // List the files in the pre-commit repository for debugging
       try {
         const files = await this.listRepositoryFiles(preCommitPath);
-        logger.debug(`📁 Files available in pre-commit repository: ${files.slice(0, 20).join(', ')}${files.length > 20 ? ` (and ${files.length - 20} more)` : ''}`);
+        logger.debug(
+          `📁 Files available in pre-commit repository: ${files.slice(0, 20).join(', ')}${files.length > 20 ? ` (and ${files.length - 20} more)` : ''}`
+        );
       } catch (error) {
         logger.debug(`Could not list pre-commit repository files: ${error}`);
       }
-      
+
       return preCommitPath;
     } catch (error) {
       logger.error(`Failed to create pre-commit repository: ${error}`);
@@ -379,16 +402,16 @@ export class GitAnalyzer {
 
   private async listRepositoryFiles(repoPath: string): Promise<string[]> {
     const files: string[] = [];
-    
+
     async function walk(dir: string): Promise<void> {
       const entries = await fs.readdir(dir, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         if (entry.name.startsWith('.git')) continue; // Skip git files
-        
+
         const fullPath = path.join(dir, entry.name);
         const relativePath = path.relative(repoPath, fullPath);
-        
+
         if (entry.isDirectory()) {
           await walk(fullPath);
         } else {
@@ -396,13 +419,13 @@ export class GitAnalyzer {
         }
       }
     }
-    
+
     await walk(repoPath);
     return files.sort();
   }
 
   async cleanup(): Promise<void> {
-    if (this.repoPath && await fs.pathExists(this.repoPath)) {
+    if (this.repoPath && (await fs.pathExists(this.repoPath))) {
       try {
         await fs.remove(this.repoPath);
         logger.info(`Cleaned up temporary repository at ${this.repoPath}`);

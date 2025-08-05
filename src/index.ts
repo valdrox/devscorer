@@ -13,6 +13,7 @@ import { ContributionScore, AnalysisReport, GitContribution, Hint } from './type
 import { logger, setLogLevel } from './utils/logger.js';
 import { config, validateConfig } from './utils/config.js';
 import { tempManager } from './utils/temp-manager.js';
+import { ErrorHandler, ValidationError, ConfigurationError } from './utils/error-handler.js';
 
 class GitContributionScorer {
   private gitAnalyzer: GitAnalyzer;
@@ -38,12 +39,14 @@ class GitContributionScorer {
       logger.info(`Repository cloned successfully`);
 
       const allRecentContributions = await this.gitAnalyzer.getRecentContributions(days);
-      
+
       // Apply limit if specified
       const contributionsToAnalyze = limit ? allRecentContributions.slice(0, limit) : allRecentContributions;
-      
+
       if (limit && allRecentContributions.length > limit) {
-        logger.info(`Found ${allRecentContributions.length} recent contributions, limiting to first ${limit} for analysis`);
+        logger.info(
+          `Found ${allRecentContributions.length} recent contributions, limiting to first ${limit} for analysis`
+        );
       } else {
         logger.info(`Found ${contributionsToAnalyze.length} recent contributions to analyze`);
       }
@@ -55,7 +58,9 @@ class GitContributionScorer {
 
       const claudeAvailable = await this.claudeRunner.isClaudeCodeAvailable();
       if (!claudeAvailable) {
-        throw new Error('Claude Code SDK is not available. Please install Claude Code: npm install -g @anthropic-ai/claude-code');
+        throw new Error(
+          'Claude Code SDK is not available. Please install Claude Code: npm install -g @anthropic-ai/claude-code'
+        );
       }
 
       const developerScores: ContributionScore[] = [];
@@ -91,7 +96,7 @@ class GitContributionScorer {
     // Create pre-commit repository for Claude Code to work with
     logger.debug(`Creating pre-commit repository for ${contribution.branch} (commit: ${contribution.commitHash})`);
     let preCommitRepoPath: string;
-    
+
     try {
       preCommitRepoPath = await this.gitAnalyzer.createPreCommitRepository(contribution.commitHash);
       logger.debug(`Pre-commit repository created at: ${preCommitRepoPath}`);
@@ -119,7 +124,9 @@ class GitContributionScorer {
         );
 
         if (!aiResult.success) {
-          logger.warn(`Claude Code failed on attempt ${attempts} for ${contribution.branch}: ${aiResult.errors?.join(', ')}`);
+          logger.warn(
+            `Claude Code failed on attempt ${attempts} for ${contribution.branch}: ${aiResult.errors?.join(', ')}`
+          );
           break;
         }
 
@@ -131,9 +138,13 @@ class GitContributionScorer {
 
         if (comparison.isEquivalent || comparison.similarityScore >= config.similarityThreshold) {
           functionalityMatched = true;
-          logger.debug(`✅ Claude Code matched functionality for ${contribution.branch} on attempt ${attempts} (score: ${comparison.similarityScore}, threshold: ${config.similarityThreshold})`);
+          logger.debug(
+            `✅ Claude Code matched functionality for ${contribution.branch} on attempt ${attempts} (score: ${comparison.similarityScore}, threshold: ${config.similarityThreshold})`
+          );
         } else {
-          logger.debug(`❌ Claude Code didn't match yet for ${contribution.branch} (score: ${comparison.similarityScore}, threshold: ${config.similarityThreshold})`);
+          logger.debug(
+            `❌ Claude Code didn't match yet for ${contribution.branch} (score: ${comparison.similarityScore}, threshold: ${config.similarityThreshold})`
+          );
           const nextHint = await this.codeComparator.generateProgressiveHint(
             comparison.gaps,
             comparison.differences,
@@ -176,7 +187,9 @@ class GitContributionScorer {
       attempts
     );
 
-    logger.info(`Score for ${contribution.branch}: ${complexityScore} (${hintsGiven.length} hints, ${attempts} attempts)`);
+    logger.info(
+      `Score for ${contribution.branch}: ${complexityScore} (${hintsGiven.length} hints, ${attempts} attempts)`
+    );
     return contributionScore;
   }
 }
@@ -208,19 +221,25 @@ async function main() {
 
         const days = parseInt(options.days, 10);
         if (isNaN(days) || days < 1 || days > 365) {
-          throw new Error('Days must be a number between 1 and 365');
+          throw new ValidationError('Days must be a number between 1 and 365', {
+            provided: options.days,
+          });
         }
 
         let limit: number | undefined;
         if (options.limit) {
           limit = parseInt(options.limit, 10);
           if (isNaN(limit) || limit < 1 || limit > 1000) {
-            throw new Error('Limit must be a number between 1 and 1000');
+            throw new ValidationError('Limit must be a number between 1 and 1000', {
+              provided: options.limit,
+            });
           }
         }
 
         if (!repoUrl.match(/^https?:\/\//)) {
-          throw new Error('Repository URL must be a valid HTTP/HTTPS URL');
+          throw new ValidationError('Repository URL must be a valid HTTP/HTTPS URL', {
+            provided: repoUrl,
+          });
         }
 
         console.log(chalk.blue('🔍 Git Contribution Scorer'));
@@ -244,10 +263,20 @@ async function main() {
         }
 
         await tempManager.cleanupAll();
-        
       } catch (error) {
-        logger.error(`Analysis failed: ${error}`);
-        console.error(chalk.red(`❌ Error: ${error instanceof Error ? error.message : String(error)}`));
+        const appError = ErrorHandler.handle(error, 'main-analysis');
+        const userMessage = ErrorHandler.formatForUser(appError);
+
+        console.error(chalk.red(`❌ Error: ${userMessage}`));
+
+        // Log additional context for debugging
+        logger.error('Analysis failed', error as Error, {
+          repository: repoUrl,
+          daysAnalyzed: options.days,
+          limitApplied: options.limit,
+          errorContext: ErrorHandler.extractContext(appError),
+        });
+
         await tempManager.cleanupAll();
         process.exit(1);
       }
@@ -263,7 +292,7 @@ async function main() {
 
         const claudeRunner = new ClaudeRunner();
         const available = await claudeRunner.isClaudeCodeAvailable();
-        
+
         if (available) {
           console.log(chalk.green('✅ Claude Code SDK is available'));
         } else {
@@ -282,7 +311,7 @@ async function main() {
 function formatAsCSV(report: AnalysisReport): string {
   const lines: string[] = [];
   lines.push('Developer,Date,Branch,Description,Score,Hints Needed,Attempts,Base Complexity');
-  
+
   for (const score of report.developerScores) {
     const line = [
       score.developer,
@@ -292,17 +321,17 @@ function formatAsCSV(report: AnalysisReport): string {
       score.score.toString(),
       score.hintsNeeded.toString(),
       score.details.attempts.toString(),
-      score.details.baseComplexity.toString()
+      score.details.baseComplexity.toString(),
     ].join(',');
     lines.push(line);
   }
-  
+
   return lines.join('\n');
 }
 
 // ES modules don't have require.main, use import.meta instead
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error) => {
+  main().catch(error => {
     logger.error('Unhandled error in main:', error);
     process.exit(1);
   });

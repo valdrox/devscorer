@@ -31,14 +31,14 @@ describe('Directory Permissions Test', () => {
     // Test 3: Create a file with Node.js
     const testFile = path.join(tempDir, 'node-test.txt');
     const testContent = 'Node.js can write this content';
-    
+
     await fs.writeFile(testFile, testContent, 'utf-8');
     console.log('✅ Node.js successfully created file');
 
     // Test 4: Verify file was created and readable
     const fileExists = await fs.pathExists(testFile);
     expect(fileExists).toBe(true);
-    
+
     const readContent = await fs.readFile(testFile, 'utf-8');
     expect(readContent).toBe(testContent);
     console.log(`📄 Node.js successfully read file: "${readContent}"`);
@@ -46,7 +46,7 @@ describe('Directory Permissions Test', () => {
     // Test 5: Modify the file
     const modifiedContent = 'Node.js modified this content';
     await fs.writeFile(testFile, modifiedContent, 'utf-8');
-    
+
     const newContent = await fs.readFile(testFile, 'utf-8');
     expect(newContent).toBe(modifiedContent);
     console.log(`📝 Node.js successfully modified file: "${newContent}"`);
@@ -89,7 +89,7 @@ describe('Directory Permissions Test', () => {
     // Create the exact same file that Claude Code test uses
     const testFile = path.join(tempDir, 'test.txt');
     const originalContent = 'original content';
-    
+
     await fs.writeFile(testFile, originalContent, 'utf-8');
     console.log(`📄 Created test.txt with: "${originalContent}"`);
 

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { BusinessPurpose, GitContribution, GitCommit } from '../types/index.js';
+import { BusinessPurpose, GitContribution } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 
@@ -20,22 +20,24 @@ export class BusinessExtractor {
     try {
       const prompt = this.buildAnalysisPrompt(contribution);
       logger.debug(`Business analysis prompt: ${prompt}`);
-      
+
       const response = await this.anthropic.messages.create({
         model: config.claudeModel,
         max_tokens: 1000,
         messages: [
           {
             role: 'user',
-            content: prompt
-          }
-        ]
+            content: prompt,
+          },
+        ],
       });
 
       const analysisText = response.content[0].type === 'text' ? response.content[0].text : '';
       const businessPurpose = this.parseBusinessPurpose(analysisText);
       logger.debug(`🎯 Extracted business purpose: ${businessPurpose.summary}`);
-      logger.debug(`📋 Requirements (${businessPurpose.requirements.length}): ${businessPurpose.requirements.join('; ')}`);
+      logger.debug(
+        `📋 Requirements (${businessPurpose.requirements.length}): ${businessPurpose.requirements.join('; ')}`
+      );
       return businessPurpose;
     } catch (error) {
       logger.error(`Failed to extract business purpose: ${error}`);
@@ -83,7 +85,7 @@ Focus on extracting clear, actionable requirements that would allow another deve
   private summarizeCodeChanges(diff: string): string {
     const lines = diff.split('\n');
     const summary: string[] = [];
-    
+
     let currentFile = '';
     let addedLines = 0;
     let deletedLines = 0;
@@ -122,7 +124,7 @@ Focus on extracting clear, actionable requirements that would allow another deve
 
   private categorizeFiles(files: string[]): string[] {
     const categories: { [key: string]: number } = {};
-    
+
     for (const file of files) {
       const ext = file.split('.').pop()?.toLowerCase();
       if (ext) {
@@ -131,24 +133,24 @@ Focus on extracting clear, actionable requirements that would allow another deve
     }
 
     return Object.entries(categories)
-      .sort(([,a], [,b]) => b - a)
-      .map(([ext, count]) => count > 1 ? `${ext}(${count})` : ext)
+      .sort(([, a], [, b]) => b - a)
+      .map(([ext, count]) => (count > 1 ? `${ext}(${count})` : ext))
       .slice(0, 5);
   }
 
   private extractKeyCodeSnippets(diff: string): string[] {
     const lines = diff.split('\n');
     const snippets: string[] = [];
-    let currentContext = '';
+    // let currentContext = '';
 
     for (let i = 0; i < lines.length && snippets.length < 5; i++) {
       const line = lines[i];
-      
+
       if (line.startsWith('@@')) {
-        currentContext = line;
+        // currentContext = line;
       } else if (line.startsWith('+') && !line.startsWith('+++')) {
         const content = line.substring(1).trim();
-        
+
         if (this.isSignificantCode(content)) {
           snippets.push(`+ ${content.substring(0, 100)}`);
         }
@@ -160,7 +162,7 @@ Focus on extracting clear, actionable requirements that would allow another deve
 
   private isSignificantCode(code: string): boolean {
     if (code.length < 10) return false;
-    
+
     const significantPatterns = [
       /function\s+\w+/,
       /class\s+\w+/,
@@ -176,7 +178,7 @@ Focus on extracting clear, actionable requirements that would allow another deve
       /return\s+/,
       /throw\s+/,
       /try\s*{/,
-      /catch\s*\(/
+      /catch\s*\(/,
     ];
 
     return significantPatterns.some(pattern => pattern.test(code));
@@ -184,7 +186,7 @@ Focus on extracting clear, actionable requirements that would allow another deve
 
   private parseBusinessPurpose(analysisText: string): BusinessPurpose {
     const lines = analysisText.split('\n').map(line => line.trim());
-    
+
     let summary = '';
     const requirements: string[] = [];
     let technicalContext = '';
@@ -206,23 +208,23 @@ Focus on extracting clear, actionable requirements that would allow another deve
           requirements.push(requirement);
         }
       } else if (currentSection === 'technical' && line) {
-        technicalContext += ' ' + line;
+        technicalContext += ` ${line}`;
       }
     }
 
     return {
       summary: summary || 'Code changes without clear business purpose',
       requirements: requirements.length > 0 ? requirements : ['Implement the changes shown in the code diff'],
-      technicalContext: technicalContext.trim() || 'No specific technical context identified'
+      technicalContext: technicalContext.trim() || 'No specific technical context identified',
     };
   }
 
   private createFallbackBusinessPurpose(contribution: GitContribution): BusinessPurpose {
     const branchWords = contribution.branch.split(/[-_]/).filter(word => word.length > 2);
-    const hasFeatureKeywords = branchWords.some(word => 
+    const hasFeatureKeywords = branchWords.some(word =>
       ['feature', 'feat', 'add', 'new', 'implement'].includes(word.toLowerCase())
     );
-    const hasBugKeywords = branchWords.some(word => 
+    const hasBugKeywords = branchWords.some(word =>
       ['fix', 'bug', 'hotfix', 'patch', 'repair'].includes(word.toLowerCase())
     );
 
@@ -238,9 +240,9 @@ Focus on extracting clear, actionable requirements that would allow another deve
       requirements: [
         'Analyze the code changes in the diff',
         'Implement equivalent functionality',
-        'Maintain the same behavior and interface'
+        'Maintain the same behavior and interface',
       ],
-      technicalContext: `Changes in ${contribution.linesChanged} lines across multiple files`
+      technicalContext: `Changes in ${contribution.linesChanged} lines across multiple files`,
     };
   }
 }

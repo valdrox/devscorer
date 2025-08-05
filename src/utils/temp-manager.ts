@@ -2,7 +2,6 @@ import fs from 'fs-extra';
 import path from 'path';
 import tmp from 'tmp';
 import { logger } from './logger.js';
-import { config } from './config.js';
 
 export class TempManager {
   private tempDirs: Set<string> = new Set();
@@ -15,13 +14,13 @@ export class TempManager {
   async createTempDirectory(prefix: string = 'devscorer-'): Promise<string> {
     const options: tmp.DirOptions = {
       prefix,
-      unsafeCleanup: true
+      unsafeCleanup: true,
     };
 
     // Let Node.js use the system temp directory (no custom override)
     const tempDir = tmp.dirSync(options);
     this.tempDirs.add(tempDir.name);
-    
+
     const cleanup = () => {
       try {
         tempDir.removeCallback();
@@ -32,7 +31,7 @@ export class TempManager {
     };
 
     this.cleanupHandlers.add(cleanup);
-    
+
     logger.debug(`Created temp directory: ${tempDir.name}`);
     return tempDir.name;
   }
@@ -44,12 +43,12 @@ export class TempManager {
     const options: tmp.FileOptions = {
       prefix,
       postfix: suffix,
-      discardDescriptor: true
+      discardDescriptor: true,
     };
 
     // Let Node.js use the system temp directory (no custom override)
     const tempFile = tmp.fileSync(options);
-    
+
     const cleanup = () => {
       try {
         tempFile.removeCallback();
@@ -59,11 +58,11 @@ export class TempManager {
     };
 
     this.cleanupHandlers.add(cleanup);
-    
+
     logger.debug(`Created temp file: ${tempFile.name}`);
     return {
       path: tempFile.name,
-      cleanup
+      cleanup,
     };
   }
 
@@ -73,7 +72,7 @@ export class TempManager {
     }
 
     const sourceStats = await fs.stat(sourcePath);
-    
+
     if (sourceStats.isDirectory()) {
       const tempDir = await this.createTempDirectory(prefix);
       await fs.copy(sourcePath, tempDir);
@@ -86,11 +85,7 @@ export class TempManager {
     }
   }
 
-  async writeToTemp(
-    content: string,
-    suffix: string = '.txt',
-    prefix: string = 'content-'
-  ): Promise<string> {
+  async writeToTemp(content: string, suffix: string = '.txt', prefix: string = 'content-'): Promise<string> {
     const { path: tempPath } = await this.createTempFile(suffix, prefix);
     await fs.writeFile(tempPath, content, 'utf-8');
     return tempPath;
@@ -115,9 +110,9 @@ export class TempManager {
 
   async cleanupAll(): Promise<void> {
     logger.info('Cleaning up all temporary files and directories');
-    
+
     const cleanupPromises = Array.from(this.cleanupHandlers).map(cleanup => {
-      return new Promise<void>((resolve) => {
+      return new Promise<void>(resolve => {
         try {
           cleanup();
         } catch (error) {
@@ -128,10 +123,10 @@ export class TempManager {
     });
 
     await Promise.all(cleanupPromises);
-    
+
     this.tempDirs.clear();
     this.cleanupHandlers.clear();
-    
+
     logger.info('Temporary cleanup completed');
   }
 
@@ -158,7 +153,7 @@ export class TempManager {
       });
     });
 
-    process.on('uncaughtException', (error) => {
+    process.on('uncaughtException', error => {
       logger.error('Uncaught exception:', error);
       this.cleanupAll().finally(() => {
         process.exit(1);
@@ -166,7 +161,7 @@ export class TempManager {
     });
 
     process.on('unhandledRejection', (reason, promise) => {
-      logger.error('Unhandled rejection at:', promise, 'reason:', reason);
+      logger.error('Unhandled rejection', reason as Error, { promise: String(promise) });
       this.cleanupAll().finally(() => {
         process.exit(1);
       });

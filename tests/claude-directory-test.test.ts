@@ -32,11 +32,19 @@ describe('Claude Code Directory Test', () => {
     // Create marker files that Claude Code should be able to see
     await fs.writeFile(path.join(tempDir, 'marker1.txt'), 'I am marker 1', 'utf-8');
     await fs.writeFile(path.join(tempDir, 'marker2.txt'), 'I am marker 2', 'utf-8');
-    await fs.writeFile(path.join(tempDir, 'test-data.json'), JSON.stringify({
-      message: "Claude Code should see this",
-      timestamp: new Date().toISOString(),
-      directory: tempDir
-    }, null, 2), 'utf-8');
+    await fs.writeFile(
+      path.join(tempDir, 'test-data.json'),
+      JSON.stringify(
+        {
+          message: 'Claude Code should see this',
+          timestamp: new Date().toISOString(),
+          directory: tempDir,
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
 
     console.log('📄 Created marker files that Claude Code should see');
 
@@ -60,7 +68,7 @@ Please complete these tasks and report what you find.`;
 
     let claudeOutput: string[] = [];
     let success = false;
-    
+
     try {
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => abortController.abort(), 45000); // 45 second timeout
@@ -70,8 +78,8 @@ Please complete these tasks and report what you find.`;
         abortController,
         options: {
           maxTurns: 15,
-          cwd: tempDir
-        }
+          cwd: tempDir,
+        },
       })) {
         if (message.type === 'result') {
           console.log(`📊 Claude Code result: ${message.subtype} (${message.num_turns} turns)`);
@@ -89,7 +97,6 @@ Please complete these tasks and report what you find.`;
       }
 
       clearTimeout(timeoutId);
-
     } catch (error) {
       console.error(`❌ Claude Code error: ${error}`);
       success = false;
@@ -130,6 +137,5 @@ Please complete these tasks and report what you find.`;
     // This test is for investigation, so we don't fail on assertions
     // Just report what we found
     expect(success).toBe(true); // Claude should at least complete successfully
-
   }, 60000); // 60 second timeout
 });

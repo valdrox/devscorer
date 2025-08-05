@@ -1,14 +1,22 @@
 # Git Contribution Scorer
 
-A command-line tool that measures the complexity and value of code contributions by testing whether AI could replicate the same functionality. This provides an objective measure of developer contributions based on intellectual complexity rather than simple metrics like lines of code.
+A command-line tool that measures the complexity and value of code contributions
+by testing whether AI could replicate the same functionality. This provides an
+objective measure of developer contributions based on intellectual complexity
+rather than simple metrics like lines of code.
 
 ## How It Works
 
-1. **Analyzes Recent Code Changes**: Clones a repository and examines significant commits from the last N days
-2. **Extracts Business Requirements**: Uses AI to understand what each developer was trying to accomplish
-3. **Tests AI Replication**: Asks Claude Code to implement the same functionality from scratch
-4. **Progressive Hints**: If AI can't match the original, provides increasingly specific hints
-5. **Scores Complexity**: Calculates a score based on how many hints were needed and other factors
+1. **Analyzes Recent Code Changes**: Clones a repository and examines
+   significant commits from the last N days
+2. **Extracts Business Requirements**: Uses AI to understand what each developer
+   was trying to accomplish
+3. **Tests AI Replication**: Asks Claude Code to implement the same
+   functionality from scratch
+4. **Progressive Hints**: If AI can't match the original, provides increasingly
+   specific hints
+5. **Scores Complexity**: Calculates a score based on how many hints were needed
+   and other factors
 
 ## Installation
 
@@ -32,7 +40,8 @@ npm link
 1. **Node.js 18+**: Required for running the application (ES modules support)
 2. **Anthropic API Key**: For Claude API access
 
-**Note**: Claude Code SDK is included as a project dependency - no separate installation required!
+**Note**: Claude Code SDK is included as a project dependency - no separate
+installation required!
 
 ## Configuration
 
@@ -92,16 +101,19 @@ git-scorer check
 
 This tool is designed to work with modern Git workflows:
 
-- **Individual Commits**: Analyzes commits directly rather than requiring merge commits
-- **Squash Merges**: Works with repositories using squash-and-merge workflows  
+- **Individual Commits**: Analyzes commits directly rather than requiring merge
+  commits
+- **Squash Merges**: Works with repositories using squash-and-merge workflows
 - **Rebase Workflows**: Compatible with rebase-heavy development practices
-- **Smart Filtering**: Automatically skips trivial commits (version bumps, formatting, etc.)
+- **Smart Filtering**: Automatically skips trivial commits (version bumps,
+  formatting, etc.)
 
 ### What Gets Analyzed
 
 The tool focuses on **significant commits** and filters out:
+
 - Version bumps and releases
-- Minor formatting and linting changes  
+- Minor formatting and linting changes
 - Documentation-only updates
 - Automated commits (CI/CD)
 
@@ -110,7 +122,7 @@ The tool focuses on **significant commits** and filters out:
 ### Score Ranges
 
 - **0-10**: Trivial changes that AI can easily replicate
-- **11-25**: Simple implementations following standard patterns  
+- **11-25**: Simple implementations following standard patterns
 - **26-50**: Moderate complexity requiring some domain knowledge
 - **51-75**: Complex solutions with creative problem-solving
 - **76-100**: Expert-level implementations with deep insight
@@ -186,7 +198,7 @@ npm run lint
 src/
 ├── core/
 │   ├── git-analyzer.ts       # Git operations and commit analysis
-│   ├── business-extractor.ts # Extract business purpose from commits  
+│   ├── business-extractor.ts # Extract business purpose from commits
 │   ├── claude-runner.ts      # Claude Code integration
 │   ├── code-comparator.ts    # Compare functionality equivalence
 │   └── scoring-engine.ts     # Calculate complexity scores

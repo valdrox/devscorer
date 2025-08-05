@@ -32,7 +32,7 @@ describe('Simple Claude Code File Test', () => {
     // Setup: Create test file
     const testFile = path.join(tempDir, 'test.txt');
     await fs.writeFile(testFile, 'original content', 'utf-8');
-    
+
     console.log('📄 Created test file with "original content"');
 
     // Simple prompt for Claude Code
@@ -50,7 +50,7 @@ Complete this task now.`;
 
     // Run Claude Code directly with the SDK
     let success = false;
-    
+
     try {
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => abortController.abort(), 30000); // 30 second timeout
@@ -61,8 +61,8 @@ Complete this task now.`;
         options: {
           maxTurns: 8,
           cwd: tempDir,
-          permissionMode: 'bypassPermissions'
-        }
+          permissionMode: 'bypassPermissions',
+        },
       })) {
         if (message.type === 'result') {
           console.log(`📊 Result: ${message.subtype} (${message.num_turns} turns)`);
@@ -79,7 +79,6 @@ Complete this task now.`;
       }
 
       clearTimeout(timeoutId);
-
     } catch (error) {
       console.error(`❌ Claude Code error: ${error}`);
       success = false;
@@ -87,15 +86,14 @@ Complete this task now.`;
 
     // Check results
     console.log(`📊 Claude Code success: ${success}`);
-    
+
     const finalContent = await fs.readFile(testFile, 'utf-8');
     console.log(`📄 Final file content: "${finalContent}"`);
 
     // Assertions
     expect(success).toBe(true);
     expect(finalContent.trim()).toBe('modified content');
-    
-    console.log('✅ Simple test completed!');
 
+    console.log('✅ Simple test completed!');
   }, 45000); // 45 second timeout
 });

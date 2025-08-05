@@ -17,7 +17,7 @@ describe('Claude Code File Modification Tests', () => {
     // Create a temporary directory for each test
     tempDir = await tempManager.createTempDirectory('claude-test-');
     claudeRunner = new ClaudeRunner();
-    
+
     // Initialize git repository for diff extraction
     const simpleGit = (await import('simple-git')).default;
     const git = simpleGit(tempDir);
@@ -52,10 +52,10 @@ describe('Claude Code File Modification Tests', () => {
       const testFile = path.join(tempDir, 'helloworld.md');
       const originalContent = 'hello world';
       const expectedContent = 'hello modified world';
-      
+
       await fs.writeFile(testFile, originalContent, 'utf-8');
       console.log(`📄 Created test file with content: "${originalContent}"`);
-      
+
       // Verify setup
       const setupContent = await fs.readFile(testFile, 'utf-8');
       expect(setupContent).toBe(originalContent);
@@ -65,9 +65,9 @@ describe('Claude Code File Modification Tests', () => {
         summary: 'Change the content of helloworld.md file',
         requirements: [
           'Modify the content from "hello world" to "hello modified world"',
-          'Keep the same filename and format'
+          'Keep the same filename and format',
         ],
-        technicalContext: 'Simple text file modification task'
+        technicalContext: 'Simple text file modification task',
       };
 
       console.log('🤖 Running Claude Code with task...');
@@ -86,7 +86,7 @@ describe('Claude Code File Modification Tests', () => {
         success: result.success,
         codeLength: result.code?.length || 0,
         errors: result.errors,
-        warnings: result.warnings
+        warnings: result.warnings,
       });
 
       // Verification: Check if Claude Code succeeded
@@ -96,11 +96,10 @@ describe('Claude Code File Modification Tests', () => {
       // Verification: Check if file was actually modified
       const modifiedContent = await fs.readFile(testFile, 'utf-8');
       console.log(`📄 Final file content: "${modifiedContent}"`);
-      
+
       expect(modifiedContent.trim()).toBe(expectedContent);
-      
+
       console.log('✅ Test completed successfully!');
-      
     }, 90000); // 90 second timeout for Claude Code execution
 
     test('should create new file when requested', async () => {
@@ -122,11 +121,8 @@ describe('Claude Code File Modification Tests', () => {
       // Create business purpose for the file creation task
       const businessPurpose: BusinessPurpose = {
         summary: 'Create a new text file',
-        requirements: [
-          `Create a file named "${newFileName}"`,
-          `Write the content: "${expectedContent}"`
-        ],
-        technicalContext: 'File creation task in temporary directory'
+        requirements: [`Create a file named "${newFileName}"`, `Write the content: "${expectedContent}"`],
+        technicalContext: 'File creation task in temporary directory',
       };
 
       // Action: Run Claude Code to create the file
@@ -142,7 +138,7 @@ describe('Claude Code File Modification Tests', () => {
       console.log('📊 Claude Code file creation result:', {
         success: result.success,
         codeLength: result.code?.length || 0,
-        errors: result.errors
+        errors: result.errors,
       });
 
       // Verification: Check if Claude Code succeeded
@@ -155,7 +151,6 @@ describe('Claude Code File Modification Tests', () => {
       expect(createdContent.trim()).toBe(expectedContent);
 
       console.log('✅ File creation test completed successfully!');
-
     }, 60000); // 60 second timeout
 
     test('should work in the correct temporary directory', async () => {
@@ -179,9 +174,9 @@ describe('Claude Code File Modification Tests', () => {
         requirements: [
           'Read the marker.txt file',
           'Create a response.txt file with the content you read from marker.txt',
-          'This will prove you are working in the correct directory'
+          'This will prove you are working in the correct directory',
         ],
-        technicalContext: 'Directory verification test'
+        technicalContext: 'Directory verification test',
       };
 
       const result = await claudeRunner.runClaudeCode(
@@ -195,7 +190,7 @@ describe('Claude Code File Modification Tests', () => {
       // Debug output
       console.log('📊 Directory verification result:', {
         success: result.success,
-        errors: result.errors
+        errors: result.errors,
       });
 
       expect(result.success).toBe(true);
@@ -204,12 +199,11 @@ describe('Claude Code File Modification Tests', () => {
       // Check if response file was created with correct content
       const responsePath = path.join(tempDir, 'response.txt');
       expect(await fs.pathExists(responsePath)).toBe(true);
-      
+
       const responseContent = await fs.readFile(responsePath, 'utf-8');
       expect(responseContent.trim()).toBe(markerContent);
 
       console.log('✅ Directory verification test completed successfully!');
-
     }, 60000);
   });
 });

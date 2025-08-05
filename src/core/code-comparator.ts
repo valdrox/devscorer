@@ -21,22 +21,22 @@ export class CodeComparator {
 
     try {
       const comparisonPrompt = this.buildComparisonPrompt(originalDiff, aiGeneratedDiff, requirements);
-      logger.debug('📊 Comparison prompt: ' + comparisonPrompt);
-      
+      logger.debug(`📊 Comparison prompt: ${comparisonPrompt}`);
+
       const response = await this.anthropic.messages.create({
         model: config.claudeModel,
         max_tokens: 1500,
         messages: [
           {
             role: 'user',
-            content: comparisonPrompt
-          }
-        ]
+            content: comparisonPrompt,
+          },
+        ],
       });
 
       const analysisText = response.content[0].type === 'text' ? response.content[0].text : '';
       const comparison = this.parseComparisonResult(analysisText);
-      
+
       // Log detailed comparison results
       logger.debug(`📈 Similarity score: ${comparison.similarityScore}`);
       logger.debug(`✅ Is equivalent: ${comparison.isEquivalent}`);
@@ -46,7 +46,7 @@ export class CodeComparator {
       if (comparison.differences.length > 0) {
         logger.debug(`⚠️ Differences: ${comparison.differences.join('; ')}`);
       }
-      
+
       return comparison;
     } catch (error) {
       logger.error(`💥 Failed to compare functionality: ${error}`);
@@ -96,7 +96,7 @@ Focus on functional equivalence of the CHANGES rather than code style. Consider:
 
   private parseComparisonResult(analysisText: string): FunctionalityComparison {
     const lines = analysisText.split('\n').map(line => line.trim());
-    
+
     let isEquivalent = false;
     let similarityScore = 0.5;
     const gaps: string[] = [];
@@ -135,7 +135,7 @@ Focus on functional equivalence of the CHANGES rather than code style. Consider:
       isEquivalent,
       similarityScore,
       gaps,
-      differences
+      differences,
     };
   }
 
@@ -144,7 +144,7 @@ Focus on functional equivalence of the CHANGES rather than code style. Consider:
       isEquivalent: false,
       similarityScore: 0.3,
       gaps: ['Unable to perform detailed comparison due to API error'],
-      differences: ['Comparison analysis failed']
+      differences: ['Comparison analysis failed'],
     };
   }
 
@@ -158,16 +158,16 @@ Focus on functional equivalence of the CHANGES rather than code style. Consider:
 
     try {
       const hintPrompt = this.buildHintPrompt(gaps, differences, hintLevel, previousHints);
-      
+
       const response = await this.anthropic.messages.create({
         model: config.claudeModel,
         max_tokens: 500,
         messages: [
           {
             role: 'user',
-            content: hintPrompt
-          }
-        ]
+            content: hintPrompt,
+          },
+        ],
       });
 
       const hintText = response.content[0].type === 'text' ? response.content[0].text : '';
@@ -178,13 +178,8 @@ Focus on functional equivalence of the CHANGES rather than code style. Consider:
     }
   }
 
-  private buildHintPrompt(
-    gaps: string[],
-    differences: string[],
-    hintLevel: number,
-    previousHints: Hint[]
-  ): string {
-    let prompt = `Generate a progressive hint to help Claude Code improve its implementation.
+  private buildHintPrompt(gaps: string[], differences: string[], hintLevel: number, previousHints: Hint[]): string {
+    const prompt = `Generate a progressive hint to help Claude Code improve its implementation.
 
 IDENTIFIED GAPS:
 ${gaps.map(gap => `- ${gap}`).join('\n')}
@@ -215,7 +210,7 @@ Format your response as just the hint text, nothing else.`;
 
   private parseHint(hintText: string, hintLevel: number): Hint {
     const cleanHint = hintText.trim();
-    
+
     let hintType: 'general' | 'specific' | 'technical';
     if (hintLevel <= 3) {
       hintType = 'general';
@@ -228,13 +223,13 @@ Format your response as just the hint text, nothing else.`;
     return {
       content: cleanHint,
       level: hintLevel,
-      type: hintType
+      type: hintType,
     };
   }
 
   private createFallbackHint(gaps: string[], hintLevel: number): Hint {
     let hintContent = 'Consider reviewing the requirements more carefully';
-    
+
     if (gaps.length > 0) {
       const primaryGap = gaps[0];
       if (hintLevel <= 3) {
@@ -258,30 +253,30 @@ Format your response as just the hint text, nothing else.`;
     return {
       content: hintContent,
       level: hintLevel,
-      type: hintType
+      type: hintType,
     };
   }
 
   calculateSimilarityScore(originalDiff: string, aiGeneratedDiff: string): number {
     const original = this.normalizeDiff(originalDiff);
     const generated = this.normalizeDiff(aiGeneratedDiff);
-    
+
     if (original === generated) {
       return 1.0;
     }
 
     const longerLength = Math.max(original.length, generated.length);
     const shorterLength = Math.min(original.length, generated.length);
-    
+
     if (longerLength === 0) {
       return 0.0;
     }
 
     const lengthSimilarity = shorterLength / longerLength;
-    
+
     const commonChars = this.countCommonCharacters(original, generated);
     const charSimilarity = commonChars / longerLength;
-    
+
     return (lengthSimilarity + charSimilarity) / 2;
   }
 
@@ -290,8 +285,7 @@ Format your response as just the hint text, nothing else.`;
       .split('\n')
       .filter(line => {
         // Keep only the actual change lines, ignore diff metadata
-        return line.startsWith('+') || line.startsWith('-') && 
-               !line.startsWith('+++') && !line.startsWith('---');
+        return line.startsWith('+') || (line.startsWith('-') && !line.startsWith('+++') && !line.startsWith('---'));
       })
       .map(line => {
         // Remove the +/- prefix and normalize whitespace
