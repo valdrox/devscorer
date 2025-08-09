@@ -55,7 +55,9 @@ export class CodeComparator {
   }
 
   private buildComparisonPrompt(originalDiff: string, aiGeneratedDiff: string, requirements: string[]): string {
-    return `Compare these two git diffs to determine if they provide equivalent functionality changes.
+    return `Compare these two git diffs to determine if they provide equivalent FUNCTIONAL LOGIC changes.
+
+IMPORTANT: Focus ONLY on application logic and functionality. IGNORE documentation differences.
 
 REQUIREMENTS TO FULFILL:
 ${requirements.map((req, idx) => `${idx + 1}. ${req}`).join('\n')}
@@ -72,26 +74,28 @@ ${aiGeneratedDiff.substring(0, 3000)}
 
 Please analyze and provide your assessment in this exact format:
 
-EQUIVALENT: [true|false] - Whether the implementations provide the same core functionality
+EQUIVALENT: [true|false] - Whether the implementations provide the same core APPLICATION LOGIC
 
-SIMILARITY_SCORE: [0.0-1.0] - How similar the implementations are (1.0 = identical functionality)
+SIMILARITY_SCORE: [0.0-1.0] - How similar the FUNCTIONAL logic is (1.0 = identical functionality)
 
-GAPS: [List what the AI implementation is missing compared to the original]
+GAPS: [List what FUNCTIONAL logic the AI implementation is missing compared to the original]
 - Gap 1
 - Gap 2
 (etc.)
 
-DIFFERENCES: [List significant differences in approach or implementation]
+DIFFERENCES: [List significant differences in FUNCTIONAL approach or implementation]
 - Difference 1
 - Difference 2
 (etc.)
 
-Focus on functional equivalence of the CHANGES rather than code style. Consider:
-1. Do both diffs satisfy the same requirements?
-2. Do they modify the same types of functionality?
-3. Do they handle the same use cases and edge cases?
-4. Are the core changes functionally equivalent even if implemented differently?
-5. Note: Different file paths or variable names are acceptable if the functionality is equivalent`;
+CRITICAL EVALUATION RULES:
+1. IGNORE documentation differences (README, comments, docs files, etc.)
+2. IGNORE minor config/data file differences unless they impact core functionality
+3. Focus ONLY on business logic, algorithms, and functional behavior
+4. Consider: Do both diffs implement the same functional requirements?
+5. Consider: Do they handle the same use cases and edge cases in the application logic?
+6. Different file paths, variable names, or documentation are acceptable if the core functionality is equivalent
+7. If the original contains ONLY documentation changes, rate EQUIVALENT=true and SIMILARITY_SCORE=1.0`;
   }
 
   private parseComparisonResult(analysisText: string): FunctionalityComparison {

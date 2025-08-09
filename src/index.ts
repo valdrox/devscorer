@@ -118,10 +118,115 @@ class GitContributionScorer {
     }
   }
 
+  private async categorizeContribution(contribution: GitContribution): Promise<{ 
+    type: 'documentation' | 'logic' | 'mixed', 
+    documentationComplexity?: 'small' | 'medium' | 'heavy' 
+  }> {
+    const categorizationPrompt = `
+Analyze this git diff and categorize the contribution:
+
+DIFF:
+${contribution.diff}
+
+Categorize this contribution as:
+1. "documentation" - Only documentation changes (README, comments, docs, config files with no logic impact)
+2. "logic" - Only application/business logic changes (algorithms, functions, core functionality) 
+3. "mixed" - Both documentation and logic changes
+
+If "documentation" or "mixed", also rate the documentation complexity:
+- "small": Minor updates, typos, small additions
+- "medium": Substantial doc updates, new sections, significant improvements  
+- "heavy": Major documentation overhauls, comprehensive new documentation
+
+Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexity": "small|medium|heavy"}
+`;
+
+    try {
+      // For now, use a simple heuristic. Later we can integrate with an LLM service
+      const diff = contribution.diff.toLowerCase();
+      
+      // Check for logic file extensions and patterns
+      const hasLogicChanges = diff.match(/\.(js|ts|py|java|cpp|go|rs|c|h|php|rb|swift|kt|scala|elm|hs)[\s\n]/) ||
+                             diff.includes('function ') || diff.includes('class ') || diff.includes('import ') ||
+                             diff.includes('def ') || diff.includes('const ') || diff.includes('let ') ||
+                             diff.includes('var ') || diff.includes('if (') || diff.includes('for (') ||
+                             diff.includes('=>') || diff.includes('return ');
+      
+      // Check for documentation file patterns
+      const hasDocChanges = diff.includes('readme') || diff.match(/\.(md|txt|rst|adoc)[\s\n]/) ||
+                           diff.includes('changelog') || diff.includes('license') ||
+                           diff.includes('contributing') || diff.includes('code_of_conduct') ||
+                           diff.includes('//') || diff.includes('/*') || diff.includes('*') ||
+                           diff.includes('package.json') || diff.includes('.yml') || diff.includes('.yaml') ||
+                           diff.includes('.toml') || diff.includes('.ini');
+
+      // Simple line count heuristic for doc complexity  
+      const linesChanged = contribution.linesChanged;
+      let documentationComplexity: 'small' | 'medium' | 'heavy' = 'small';
+      if (linesChanged > 50) documentationComplexity = 'heavy';
+      else if (linesChanged > 15) documentationComplexity = 'medium';
+
+      logger.debug(`Categorization analysis: hasLogicChanges=${hasLogicChanges}, hasDocChanges=${hasDocChanges}, linesChanged=${linesChanged}`);
+
+      if (hasLogicChanges && hasDocChanges) {
+        return { type: 'mixed', documentationComplexity };
+      } else if (hasDocChanges && !hasLogicChanges) {
+        return { type: 'documentation', documentationComplexity };
+      } else {
+        return { type: 'logic' };
+      }
+    } catch (error) {
+      logger.warn(`Failed to categorize contribution ${contribution.branch}: ${error}`);
+      return { type: 'logic' }; // Default to logic analysis if categorization fails
+    }
+  }
+
+  private async scoreDocumentationOnly(contribution: GitContribution, documentationComplexity: 'small' | 'medium' | 'heavy'): Promise<ContributionScore> {
+    // Base scores for documentation complexity
+    const baseScores = {
+      small: 8,
+      medium: 15, 
+      heavy: 25
+    };
+
+    const baseScore = baseScores[documentationComplexity];
+    
+    // Add some variability based on lines changed and files modified
+    const linesBonus = Math.min(contribution.linesChanged * 0.1, 10);
+    const filesBonus = Math.min(contribution.commits.length * 2, 8);
+    
+    const finalScore = Math.round(baseScore + linesBonus + filesBonus);
+
+    logger.info(`Documentation-only contribution scored: ${finalScore} (${documentationComplexity} complexity)`);
+
+    return this.scoringEngine.createContributionScore(
+      contribution,
+      {
+        summary: `Documentation update: ${documentationComplexity} complexity`,
+        requirements: [`Update documentation with ${documentationComplexity} level changes`],
+        technicalContext: 'Documentation-only contribution, scored based on complexity and scope'
+      },
+      finalScore,
+      0, // No hints needed for doc-only
+      [], // No hints
+      1   // Single "attempt" 
+    );
+  }
+
   private async analyzeContribution(contribution: GitContribution): Promise<ContributionScore | null> {
     const businessPurpose = await this.businessExtractor.extractBusinessPurpose(contribution);
     logger.debug(`Business purpose extracted for ${contribution.branch}: ${businessPurpose.summary}`);
 
+    // Categorize the contribution to determine analysis approach
+    const category = await this.categorizeContribution(contribution);
+    logger.debug(`Contribution categorized as: ${category.type} ${category.documentationComplexity ? `(${category.documentationComplexity} docs)` : ''}`);
+
+    // Handle documentation-only contributions with direct scoring
+    if (category.type === 'documentation' && category.documentationComplexity) {
+      return await this.scoreDocumentationOnly(contribution, category.documentationComplexity);
+    }
+
+    // For logic and mixed contributions, proceed with Claude Code analysis
     // Create pre-commit repository for Claude Code to work with
     logger.debug(`Creating pre-commit repository for ${contribution.branch} (commit: ${contribution.commitHash})`);
     let preCommitRepoPath: string;
@@ -138,6 +243,9 @@ class GitContributionScorer {
     const hintsGiven: Hint[] = [];
     let attempts = 0;
     const maxAttempts = config.maxHintsPerAnalysis;
+
+    // Store category for later use in scoring
+    const contributionCategory = category;
 
     while (!functionalityMatched && attempts < maxAttempts) {
       attempts++;
@@ -200,13 +308,25 @@ class GitContributionScorer {
       logger.warn(`Failed to cleanup pre-commit repository: ${error}`);
     }
 
-    const complexityScore = this.scoringEngine.calculateComplexityScore(
+    let complexityScore = this.scoringEngine.calculateComplexityScore(
       contribution,
       hintsGiven.length,
       hintsGiven,
       attempts,
       functionalityMatched
     );
+
+    // Add documentation complexity bonus for mixed contributions
+    if (contributionCategory.type === 'mixed' && contributionCategory.documentationComplexity) {
+      const docBonus = {
+        small: 3,
+        medium: 7, 
+        heavy: 12
+      };
+      const bonus = docBonus[contributionCategory.documentationComplexity];
+      complexityScore += bonus;
+      logger.debug(`Added ${bonus} points for ${contributionCategory.documentationComplexity} documentation complexity (mixed contribution)`);
+    }
 
     const contributionScore = this.scoringEngine.createContributionScore(
       contribution,
