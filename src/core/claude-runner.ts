@@ -65,7 +65,18 @@ export class ClaudeRunner {
       `Building Claude Code prompt with ${businessPurpose.requirements.length} requirements and ${previousHints.length} hints`
     );
 
-    let prompt = `IMMEDIATE TASK: Implement the following feature requirements directly in the existing codebase.
+    let prompt = `CRITICAL: First verify you're in the correct repository:
+1. Run 'pwd' to check your current directory
+2. Run 'ls -la' to verify this is the right repository  
+3. Look for key files that indicate this is the target repository
+4. If you're in the wrong directory, STOP and throw an error immediately
+
+WORKING DIRECTORY REQUIREMENTS:
+- Must contain .git directory
+- Must be the cloned repository for analysis
+- If directory seems wrong, immediately exit with error message
+
+IMMEDIATE TASK: Implement the following feature requirements directly in the existing codebase.
 
 REQUIREMENTS TO IMPLEMENT:
 ${businessPurpose.requirements.map((req, idx) => `${idx + 1}. ${req}`).join('\n')}
@@ -85,7 +96,7 @@ WORKING DIRECTORY SCOPE:
 ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     }
 
-    prompt += `\n\nSTART IMPLEMENTING NOW`;
+    prompt += `\n\nSTART IMPLEMENTING NOW - but remember to verify directory first!`;
 
     return prompt;
   }
@@ -134,6 +145,8 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       }, 300000); // 5 minutes
 
       logger.debug(`🔧 Executing Claude Code in directory: ${workDir}`);
+      logger.debug(`🔧 Current process.cwd(): ${process.cwd()}`);
+      logger.debug(`🔧 Absolute workDir path: ${path.resolve(workDir)}`);
 
       // Verify the working directory exists and log its contents
       try {

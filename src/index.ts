@@ -89,6 +89,35 @@ class GitContributionScorer {
     }
   }
 
+  async analyzeCommit(repoUrl: string, commitHash: string): Promise<ContributionScore | null> {
+    logger.info(`Starting analysis of commit ${commitHash} from ${repoUrl}`);
+
+    try {
+      const repoPath = await this.gitAnalyzer.cloneRepository(repoUrl);
+      logger.info(`Repository cloned successfully`);
+
+      const claudeAvailable = await this.claudeRunner.isClaudeCodeAvailable();
+      if (!claudeAvailable) {
+        throw new Error(
+          'Claude Code SDK is not available. Please install Claude Code: npm install -g @anthropic-ai/claude-code'
+        );
+      }
+
+      const contribution = await this.gitAnalyzer.getCommitContribution(commitHash);
+      logger.info(`Analyzing commit: ${contribution.branch} by ${contribution.author}`);
+
+      const score = await this.analyzeContribution(contribution);
+      
+      await this.gitAnalyzer.cleanup();
+      logger.info(`Analysis completed for commit ${commitHash}`);
+
+      return score;
+    } catch (error) {
+      await this.gitAnalyzer.cleanup();
+      throw error;
+    }
+  }
+
   private async analyzeContribution(contribution: GitContribution): Promise<ContributionScore | null> {
     const businessPurpose = await this.businessExtractor.extractBusinessPurpose(contribution);
     logger.debug(`Business purpose extracted for ${contribution.branch}: ${businessPurpose.summary}`);
@@ -205,6 +234,7 @@ async function main() {
     .argument('<repo-url>', 'GitHub repository URL')
     .option('-d, --days <number>', 'Number of days to analyze', '7')
     .option('-l, --limit <number>', 'Maximum number of commits to analyze (for faster testing)')
+    .option('-c, --commit <hash>', 'Analyze a specific commit by hash')
     .option('-o, --output <file>', 'Output file for results (JSON format)')
     .option('--format <type>', 'Output format (table|json|csv)', 'table')
     .option('--verbose', 'Enable verbose logging')
@@ -243,24 +273,67 @@ async function main() {
           });
         }
 
-        console.log(chalk.blue('🔍 Git Contribution Scorer'));
-        const limitText = limit ? ` (max ${limit} commits)` : '';
-        console.log(chalk.gray(`Analyzing ${repoUrl} for the last ${days} days${limitText}...\n`));
-
         const scorer = new GitContributionScorer();
-        const report = await scorer.analyzeContributions(repoUrl, days, limit);
 
-        if (options.output) {
-          await fs.writeJson(options.output, report, { spaces: 2 });
-          console.log(chalk.green(`\n✅ Results saved to ${options.output}`));
-        }
+        if (options.commit) {
+          // Single commit analysis
+          const commitHash = options.commit;
+          console.log(chalk.blue('🔍 Git Contribution Scorer'));
+          console.log(chalk.gray(`Analyzing commit ${commitHash} from ${repoUrl}...\n`));
 
-        if (options.format === 'json') {
-          console.log(JSON.stringify(report, null, 2));
-        } else if (options.format === 'csv') {
-          console.log(formatAsCSV(report));
+          const score = await scorer.analyzeCommit(repoUrl, commitHash);
+          
+          if (!score) {
+            console.log(chalk.yellow('⚠️ No analysis result for this commit'));
+            return;
+          }
+
+          // Create a single-commit report
+          const report: AnalysisReport = {
+            repositoryUrl: repoUrl,
+            analysisDate: new Date(),
+            daysCovered: 0,
+            totalContributions: 1,
+            developerScores: [score],
+            summary: {
+              topPerformers: [score.developer],
+              averageScore: score.score,
+              complexityDistribution: { [score.score.toString()]: 1 },
+            },
+          };
+
+          if (options.output) {
+            await fs.writeJson(options.output, report, { spaces: 2 });
+            console.log(chalk.green(`\n✅ Results saved to ${options.output}`));
+          }
+
+          if (options.format === 'json') {
+            console.log(JSON.stringify(report, null, 2));
+          } else if (options.format === 'csv') {
+            console.log(formatAsCSV(report));
+          } else {
+            console.log(new ScoringEngine().formatReportForConsole(report));
+          }
         } else {
-          console.log(new ScoringEngine().formatReportForConsole(report));
+          // Multi-commit analysis (existing behavior)
+          const limitText = limit ? ` (max ${limit} commits)` : '';
+          console.log(chalk.blue('🔍 Git Contribution Scorer'));
+          console.log(chalk.gray(`Analyzing ${repoUrl} for the last ${days} days${limitText}...\n`));
+
+          const report = await scorer.analyzeContributions(repoUrl, days, limit);
+
+          if (options.output) {
+            await fs.writeJson(options.output, report, { spaces: 2 });
+            console.log(chalk.green(`\n✅ Results saved to ${options.output}`));
+          }
+
+          if (options.format === 'json') {
+            console.log(JSON.stringify(report, null, 2));
+          } else if (options.format === 'csv') {
+            console.log(formatAsCSV(report));
+          } else {
+            console.log(new ScoringEngine().formatReportForConsole(report));
+          }
         }
 
         await tempManager.cleanupAll();

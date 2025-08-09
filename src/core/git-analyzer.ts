@@ -108,6 +108,49 @@ export class GitAnalyzer {
     );
   }
 
+  async getCommitContribution(commitHash: string): Promise<GitContribution> {
+    if (!this.repoPath) {
+      throw new GitAnalysisError('Repository not cloned. Call cloneRepository first.');
+    }
+
+    return ErrorHandler.wrapAsync(
+      async () => {
+        try {
+          // Get commit details
+          const commitInfo = await this.git.raw([
+            'log',
+            '-1',
+            '--pretty=format:%H|%ai|%s|%an|%ae',
+            commitHash
+          ]);
+
+          const [hash, date, message, authorName, authorEmail] = commitInfo.trim().split('|');
+          const commit = {
+            hash,
+            date,
+            message,
+            author_name: authorName,
+            author_email: authorEmail,
+          };
+
+          const contribution = await this.analyzeRegularCommit(commit);
+          if (!contribution) {
+            throw new GitAnalysisError(`Failed to analyze commit ${commitHash}`);
+          }
+
+          return contribution;
+        } catch (error) {
+          throw new GitAnalysisError(`Failed to get commit contribution for ${commitHash}`, {
+            commitHash,
+            repoPath: this.repoPath,
+          });
+        }
+      },
+      'get-commit-contribution',
+      { commitHash }
+    );
+  }
+
   private isMergeCommit(message: string): boolean {
     const mergePatterns = [/^Merge pull request/, /^Merge branch/, /^Merge remote-tracking branch/, /^Merged in/];
 

@@ -74,6 +74,16 @@ git-scorer https://github.com/yourcompany/yourrepo --days 30
 git-scorer https://github.com/yourcompany/yourrepo --verbose
 ```
 
+### Single Commit Analysis
+
+```bash
+# Analyze a specific commit by hash
+git-scorer https://github.com/yourcompany/yourrepo --commit abc123def
+
+# Analyze specific commit with debug output
+git-scorer https://github.com/yourcompany/yourrepo --commit abc123def --debug
+```
+
 ### Output Formats
 
 ```bash
