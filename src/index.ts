@@ -14,6 +14,7 @@ import { logger, setLogLevel } from './utils/logger.js';
 import { config, validateConfig } from './utils/config.js';
 import { tempManager } from './utils/temp-manager.js';
 import { ErrorHandler, ValidationError, ConfigurationError } from './utils/error-handler.js';
+import { authManager } from './auth/auth-manager.js';
 
 class GitContributionScorer {
   private gitAnalyzer: GitAnalyzer;
@@ -348,7 +349,7 @@ async function main() {
   const program = new Command();
 
   program
-    .name('git-scorer')
+    .name('devscorer')
     .description('Analyze git contributions complexity using AI')
     .version('1.0.0')
     .argument('<repo-url>', 'GitHub repository URL')
@@ -367,7 +368,7 @@ async function main() {
           setLogLevel('info');
         }
 
-        validateConfig();
+        await validateConfig();
         logger.info('Configuration validated successfully');
 
         const days = parseInt(options.days, 10);
@@ -481,7 +482,7 @@ async function main() {
     .description('Check if Claude Code is available and configured correctly')
     .action(async () => {
       try {
-        validateConfig();
+        await validateConfig();
         console.log(chalk.green('✅ Configuration is valid'));
 
         const claudeRunner = new ClaudeRunner();
@@ -495,6 +496,55 @@ async function main() {
         }
       } catch (error) {
         console.error(chalk.red(`❌ Configuration error: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('login')
+    .description('Store Anthropic API key securely for Claude Code access')
+    .action(async () => {
+      try {
+        await authManager.login();
+      } catch (error) {
+        console.error(chalk.red(`❌ Login failed: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('logout')
+    .description('Remove stored API key from system keychain')
+    .action(async () => {
+      try {
+        await authManager.logout();
+      } catch (error) {
+        console.error(chalk.red(`❌ Logout failed: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('auth-status')
+    .description('Show authentication status')
+    .action(async () => {
+      try {
+        const status = await authManager.getAuthStatus();
+        
+        if (status.authenticated) {
+          console.log(chalk.green('✅ Authenticated'));
+          console.log(`   Method: ${status.method}`);
+          if (status.keyPreview) {
+            console.log(`   API Key: ${status.keyPreview}`);
+          }
+        } else {
+          console.log(chalk.red('❌ Not authenticated'));
+          console.log('Run one of:');
+          console.log('  • devscorer login');
+          console.log('  • Set ANTHROPIC_API_KEY environment variable');
+        }
+      } catch (error) {
+        console.error(chalk.red(`❌ Status check failed: ${error instanceof Error ? error.message : String(error)}`));
         process.exit(1);
       }
     });
@@ -524,7 +574,15 @@ function formatAsCSV(report: AnalysisReport): string {
 }
 
 // ES modules don't have require.main, use import.meta instead
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Handle both direct execution and npm link (symlink) execution
+import { fileURLToPath } from 'url';
+
+const currentFile = fileURLToPath(import.meta.url);
+const isMainModule = process.argv[1] === currentFile || 
+                     (fs.lstatSync(process.argv[1]).isSymbolicLink() && 
+                      fs.realpathSync(process.argv[1]) === currentFile);
+
+if (isMainModule) {
   main().catch(error => {
     logger.error('Unhandled error in main:', error);
     process.exit(1);

@@ -1,15 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BusinessPurpose, GitContribution } from '../types/index.js';
 import { logger } from '../utils/logger.js';
-import { config } from '../utils/config.js';
+import { config, getConfig } from '../utils/config.js';
 
 export class BusinessExtractor {
-  private anthropic: Anthropic;
+  private anthropic: Anthropic | null = null;
 
-  constructor() {
-    this.anthropic = new Anthropic({
-      apiKey: config.anthropicApiKey,
-    });
+  private async getAnthropic(): Promise<Anthropic> {
+    if (!this.anthropic) {
+      const fullConfig = await getConfig();
+      this.anthropic = new Anthropic({
+        apiKey: fullConfig.anthropicApiKey,
+      });
+    }
+    return this.anthropic;
   }
 
   async extractBusinessPurpose(contribution: GitContribution): Promise<BusinessPurpose> {
@@ -21,7 +25,8 @@ export class BusinessExtractor {
       const prompt = this.buildAnalysisPrompt(contribution);
       logger.debug(`Business analysis prompt: ${prompt}`);
 
-      const response = await this.anthropic.messages.create({
+      const anthropic = await this.getAnthropic();
+      const response = await anthropic.messages.create({
         model: config.claudeModel,
         max_tokens: 1000,
         messages: [
@@ -36,7 +41,7 @@ export class BusinessExtractor {
       const businessPurpose = this.parseBusinessPurpose(analysisText);
       logger.debug(`🎯 Extracted business purpose: ${businessPurpose.summary}`);
       logger.debug(
-        `📋 Requirements (${businessPurpose.requirements.length}): ${businessPurpose.requirements.join('; ')}`
+        `📋 Requirements (${businessPurpose.requirements.length}): ${businessPurpose.requirements.join('; ')}`,
       );
       return businessPurpose;
     } catch (error) {
@@ -222,10 +227,10 @@ Focus on extracting clear, actionable requirements that would allow another deve
   private createFallbackBusinessPurpose(contribution: GitContribution): BusinessPurpose {
     const branchWords = contribution.branch.split(/[-_]/).filter(word => word.length > 2);
     const hasFeatureKeywords = branchWords.some(word =>
-      ['feature', 'feat', 'add', 'new', 'implement'].includes(word.toLowerCase())
+      ['feature', 'feat', 'add', 'new', 'implement'].includes(word.toLowerCase()),
     );
     const hasBugKeywords = branchWords.some(word =>
-      ['fix', 'bug', 'hotfix', 'patch', 'repair'].includes(word.toLowerCase())
+      ['fix', 'bug', 'hotfix', 'patch', 'repair'].includes(word.toLowerCase()),
     );
 
     let summary = 'Code changes';

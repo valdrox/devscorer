@@ -187,7 +187,7 @@ export async function withRetry<T>(
   operation: string,
   maxRetries: number = 3,
   baseDelay: number = 1000,
-  context?: LogContext
+  context?: LogContext,
 ): Promise<T> {
   let lastError: AppError | undefined;
 

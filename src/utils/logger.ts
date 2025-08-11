@@ -48,16 +48,16 @@ class StructuredLogger {
               const correlationId = (meta.correlationId as string) || this.correlationId;
               const context = meta.operation ? `[${meta.operation}]` : '';
               return `${timestamp} [${level}] ${context} [${correlationId.substring(0, 8)}]: ${message}`;
-            })
+            }),
           ),
-        })
+        }),
       );
     } else {
       // Production console output - structured JSON
       transports.push(
         new winston.transports.Console({
           format: winston.format.combine(...formats, winston.format.json()),
-        })
+        }),
       );
     }
 
@@ -77,7 +77,7 @@ class StructuredLogger {
         format: winston.format.combine(...formats, winston.format.json()),
         maxsize: 10 * 1024 * 1024, // 10MB
         maxFiles: 5,
-      })
+      }),
     );
 
     return winston.createLogger({

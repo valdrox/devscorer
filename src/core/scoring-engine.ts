@@ -7,7 +7,7 @@ export class ScoringEngine {
     hintsNeeded: number,
     hints: Hint[],
     attempts: number,
-    functionalityMatched: boolean
+    functionalityMatched: boolean,
   ): number {
     logger.debug(`Calculating complexity score for ${contribution.branch}`);
 
@@ -21,7 +21,7 @@ export class ScoringEngine {
     const normalizedScore = Math.max(0, Math.min(100, rawScore));
 
     logger.debug(
-      `Score components for ${contribution.branch}: base=${baseComplexity}, hints=${hintComplexity}, attempts=${attemptPenalty}, difficulty=${difficultyBonus}, final=${normalizedScore}`
+      `Score components for ${contribution.branch}: base=${baseComplexity}, hints=${hintComplexity}, attempts=${attemptPenalty}, difficulty=${difficultyBonus}, final=${normalizedScore}`,
     );
 
     return Math.round(normalizedScore * 100) / 100;
@@ -165,7 +165,7 @@ export class ScoringEngine {
     finalScore: number,
     hintsNeeded: number,
     hints: Hint[],
-    attempts: number
+    attempts: number,
   ): ContributionScore {
     return {
       developer: contribution.author,
@@ -186,7 +186,7 @@ export class ScoringEngine {
   generateDetailedReport(
     repositoryUrl: string,
     daysCovered: number,
-    developerScores: ContributionScore[]
+    developerScores: ContributionScore[],
   ): AnalysisReport {
     logger.info(`Generating detailed report for ${developerScores.length} contributions`);
 

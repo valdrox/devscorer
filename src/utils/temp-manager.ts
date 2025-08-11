@@ -38,7 +38,7 @@ export class TempManager {
 
   async createTempFile(
     suffix: string = '.tmp',
-    prefix: string = 'devscorer-'
+    prefix: string = 'devscorer-',
   ): Promise<{ path: string; cleanup: () => void }> {
     const options: tmp.FileOptions = {
       prefix,

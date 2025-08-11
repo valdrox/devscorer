@@ -4,7 +4,6 @@ import path from 'path';
 import simpleGit from 'simple-git';
 import { BusinessPurpose, ClaudeCodeResult, Hint } from '../types/index.js';
 import { logger } from '../utils/logger.js';
-import { tempManager } from '../utils/temp-manager.js';
 
 export class ClaudeRunner {
   private workingDir: string = '';
@@ -15,17 +14,17 @@ export class ClaudeRunner {
     projectContext: string,
     preCommitRepoPath: string,
     originalDiff: string,
-    previousHints: Hint[] = []
+    previousHints: Hint[] = [],
   ): Promise<ClaudeCodeResult> {
     logger.info('Running Claude Code with business requirements');
 
     try {
       // Use the pre-commit repository as the working directory
       this.workingDir = preCommitRepoPath;
-      
+
       let prompt: string;
       const isResumingSession = this.sessionId !== null && previousHints.length > 0;
-      
+
       if (isResumingSession) {
         // For resumed sessions, just pass the latest hint (no additional context needed)
         const latestHint = previousHints[previousHints.length - 1];
@@ -59,10 +58,10 @@ export class ClaudeRunner {
     businessPurpose: BusinessPurpose,
     projectContext: string,
     originalDiff: string,
-    previousHints: Hint[]
+    previousHints: Hint[],
   ): string {
     logger.debug(
-      `Building Claude Code prompt with ${businessPurpose.requirements.length} requirements and ${previousHints.length} hints`
+      `Building Claude Code prompt with ${businessPurpose.requirements.length} requirements and ${previousHints.length} hints`,
     );
 
     let prompt = `CRITICAL: First verify you're in the correct repository:
@@ -96,7 +95,7 @@ WORKING DIRECTORY SCOPE:
 ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     }
 
-    prompt += `\n\nSTART IMPLEMENTING NOW - but remember to verify directory first!`;
+    prompt += '\n\nSTART IMPLEMENTING NOW - but remember to verify directory first!';
 
     return prompt;
   }
@@ -127,7 +126,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
   private async executeClaudeCode(
     prompt: string,
     workDir: string,
-    isResumingSession: boolean = false
+    isResumingSession: boolean = false,
   ): Promise<{
     code: string;
     success: boolean;
@@ -158,7 +157,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         // Log the contents of the working directory to verify scope
         const dirContents = await fs.readdir(workDir);
         logger.debug(
-          `📁 Working directory contents: ${dirContents.slice(0, 10).join(', ')}${dirContents.length > 10 ? ` (and ${dirContents.length - 10} more)` : ''}`
+          `📁 Working directory contents: ${dirContents.slice(0, 10).join(', ')}${dirContents.length > 10 ? ` (and ${dirContents.length - 10} more)` : ''}`,
         );
       } catch (error) {
         logger.error(`❌ Working directory verification failed: ${error}`);
@@ -288,7 +287,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         const hasSource = dirContents.includes('source');
         const hasPackageJson = dirContents.includes('package.json');
         logger.debug(
-          `📁 Repository indicators - .git: ${hasGit}, source/: ${hasSource}, package.json: ${hasPackageJson}`
+          `📁 Repository indicators - .git: ${hasGit}, source/: ${hasSource}, package.json: ${hasPackageJson}`,
         );
       }
 

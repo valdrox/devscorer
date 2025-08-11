@@ -1,21 +1,25 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { FunctionalityComparison, Hint } from '../types/index.js';
 import { logger } from '../utils/logger.js';
-import { config } from '../utils/config.js';
+import { config, getConfig } from '../utils/config.js';
 
 export class CodeComparator {
-  private anthropic: Anthropic;
+  private anthropic: Anthropic | null = null;
 
-  constructor() {
-    this.anthropic = new Anthropic({
-      apiKey: config.anthropicApiKey,
-    });
+  private async getAnthropic(): Promise<Anthropic> {
+    if (!this.anthropic) {
+      const fullConfig = await getConfig();
+      this.anthropic = new Anthropic({
+        apiKey: fullConfig.anthropicApiKey,
+      });
+    }
+    return this.anthropic;
   }
 
   async compareFunctionality(
     originalDiff: string,
     aiGeneratedDiff: string,
-    requirements: string[]
+    requirements: string[],
   ): Promise<FunctionalityComparison> {
     logger.info('🔍 Comparing functionality between original diff and AI-generated diff');
 
@@ -23,7 +27,8 @@ export class CodeComparator {
       const comparisonPrompt = this.buildComparisonPrompt(originalDiff, aiGeneratedDiff, requirements);
       logger.debug(`📊 Comparison prompt: ${comparisonPrompt}`);
 
-      const response = await this.anthropic.messages.create({
+      const anthropic = await this.getAnthropic();
+      const response = await anthropic.messages.create({
         model: config.claudeModel,
         max_tokens: 1500,
         messages: [
@@ -156,14 +161,15 @@ CRITICAL EVALUATION RULES:
     gaps: string[],
     differences: string[],
     hintLevel: number,
-    previousHints: Hint[]
+    previousHints: Hint[],
   ): Promise<Hint> {
     logger.info(`💡 Generating hint at level ${hintLevel}`);
 
     try {
       const hintPrompt = this.buildHintPrompt(gaps, differences, hintLevel, previousHints);
 
-      const response = await this.anthropic.messages.create({
+      const anthropic = await this.getAnthropic();
+      const response = await anthropic.messages.create({
         model: config.claudeModel,
         max_tokens: 500,
         messages: [

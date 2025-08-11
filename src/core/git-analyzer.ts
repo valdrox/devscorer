@@ -36,7 +36,7 @@ export class GitAnalyzer {
         }
       },
       'clone-repository',
-      { repository: repoUrl }
+      { repository: repoUrl },
     );
   }
 
@@ -104,7 +104,7 @@ export class GitAnalyzer {
         }
       },
       'get-recent-contributions',
-      { days }
+      { days },
     );
   }
 
@@ -121,7 +121,7 @@ export class GitAnalyzer {
             'log',
             '-1',
             '--pretty=format:%H|%ai|%s|%an|%ae',
-            commitHash
+            commitHash,
           ]);
 
           const [hash, date, message, authorName, authorEmail] = commitInfo.trim().split('|');
@@ -147,7 +147,7 @@ export class GitAnalyzer {
         }
       },
       'get-commit-contribution',
-      { commitHash }
+      { commitHash },
     );
   }
 
@@ -373,7 +373,7 @@ export class GitAnalyzer {
   private async getDirectoryStructure(
     dirPath: string,
     maxDepth: number = 2,
-    currentDepth: number = 0
+    currentDepth: number = 0,
   ): Promise<string | null> {
     if (currentDepth >= maxDepth || !(await fs.pathExists(dirPath))) {
       return null;
@@ -430,7 +430,7 @@ export class GitAnalyzer {
       try {
         const files = await this.listRepositoryFiles(preCommitPath);
         logger.debug(
-          `📁 Files available in pre-commit repository: ${files.slice(0, 20).join(', ')}${files.length > 20 ? ` (and ${files.length - 20} more)` : ''}`
+          `📁 Files available in pre-commit repository: ${files.slice(0, 20).join(', ')}${files.length > 20 ? ` (and ${files.length - 20} more)` : ''}`,
         );
       } catch (error) {
         logger.debug(`Could not list pre-commit repository files: ${error}`);
