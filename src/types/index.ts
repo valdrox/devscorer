@@ -38,6 +38,14 @@ export interface FunctionalityComparison {
   differences: string[];
 }
 
+export interface TechnicalComparison {
+  factorsThatMakeABetter: string[];
+  factorsThatMakeBBetter: string[];
+  isEquivalent: boolean;
+  superiorContribution: 'A' | 'B' | 'NEITHER';
+  similarityScore: number;
+}
+
 export interface Hint {
   content: string;
   level: number;

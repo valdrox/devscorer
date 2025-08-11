@@ -268,29 +268,38 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
           break;
         }
 
-        const comparison = await this.codeComparator.compareFunctionality(
+        const technicalComparison = await this.codeComparator.compareTechnicalContributions(
           contribution.diff,
           aiResult.code,
           businessPurpose.requirements
         );
 
-        if (comparison.isEquivalent || comparison.similarityScore >= config.similarityThreshold) {
+        if (technicalComparison.isEquivalent || technicalComparison.similarityScore >= config.similarityThreshold) {
           functionalityMatched = true;
           logger.debug(
-            `✅ Claude Code matched functionality for ${contribution.branch} on attempt ${attempts} (score: ${comparison.similarityScore}, threshold: ${config.similarityThreshold})`
+            `✅ Claude Code matched functionality for ${contribution.branch} on attempt ${attempts} (score: ${technicalComparison.similarityScore}, threshold: ${config.similarityThreshold})`
           );
         } else {
           logger.debug(
-            `❌ Claude Code didn't match yet for ${contribution.branch} (score: ${comparison.similarityScore}, threshold: ${config.similarityThreshold})`
+            `❌ Claude Code didn't match yet for ${contribution.branch} (score: ${technicalComparison.similarityScore}, threshold: ${config.similarityThreshold})`
           );
-          const nextHint = await this.codeComparator.generateProgressiveHint(
-            comparison.gaps,
-            comparison.differences,
+          
+          // Only generate hint if human contribution is technically superior
+          const humanTechnicalFactors = technicalComparison.factorsThatMakeABetter;
+          const nextHint = await this.codeComparator.generateTechnicalHint(
+            humanTechnicalFactors,
             hintsGiven.length + 1,
             hintsGiven
           );
+          
+          if (nextHint === null) {
+            // AI implementation is equal or better - stop trying
+            logger.debug(`🤖 AI implementation is technically equal or superior for ${contribution.branch} - stopping hint generation`);
+            break;
+          }
+          
           hintsGiven.push(nextHint);
-          logger.debug(`💡 Generated hint ${hintsGiven.length} for ${contribution.branch}: ${nextHint.content}`);
+          logger.debug(`💡 Generated technical hint ${hintsGiven.length} for ${contribution.branch}: ${nextHint.content}`);
         }
       } catch (error) {
         logger.error(`Error during attempt ${attempts} for ${contribution.branch}: ${error}`);
