@@ -1,7 +1,7 @@
 {
-  "name": "git-contribution-scorer",
+  "name": "devscorer",
   "version": "1.0.0",
-  "description": "A tool that measures code contribution complexity by testing if AI could replicate the same functionality",
+  "description": "CLI tool that measures code contribution complexity using AI to test if contributions can be replicated",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -26,9 +26,22 @@
     "claude",
     "contribution",
     "scoring",
-    "complexity"
+    "complexity",
+    "cli",
+    "developer",
+    "metrics",
+    "code-quality",
+    "anthropic"
   ],
-  "author": "Your Name",
+  "author": "valdrox",
+  "homepage": "https://github.com/valdrox/devscorer#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/valdrox/devscorer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/valdrox/devscorer/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.0",
@@ -57,5 +70,10 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ]
 }

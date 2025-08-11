@@ -1,63 +1,54 @@
-# Git Contribution Scorer
+# DevScorer
 
-A command-line tool that measures the complexity and value of code contributions
-by testing whether AI could replicate the same functionality. This provides an
-objective measure of developer contributions based on intellectual complexity
-rather than simple metrics like lines of code.
+Evaluating developer performance is notoriously difficult. This project is a proof of concept to leverage LLMs to evaluate one aspect of dev work : writing code to spec. 
+
+The tool measures the complexity and value of code contributions by testing whether AI could replicate the same functionality. It provides an objective measure of developer contributions based on intellectual complexity rather than simple metrics like number of lines of code.
+
+## WARNING 
+This is not meant to be used in prod. It's running a copy of Claude Code locally on your computer without any sandbox! 
+
+## Quick Start
+
+```bash
+# Install globally
+npm install -g devscorer
+
+# Authenticate with your Anthropic API key
+devscorer login
+
+# Analyze a repository
+devscorer https://github.com/company/repo
+```
 
 ## How It Works
 
-1. **Analyzes Recent Code Changes**: Clones a repository and examines
-   significant commits from the last N days
-2. **Extracts Business Requirements**: Uses AI to understand what each developer
-   was trying to accomplish
-3. **Tests AI Replication**: Asks Claude Code to implement the same
-   functionality from scratch
-4. **Progressive Hints**: If AI can't match the original, provides increasingly
-   specific hints
-5. **Scores Complexity**: Calculates a score based on how many hints were needed
-   and other factors
-
-## Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd devscorer
-
-# Install dependencies
-npm install
-
-# Build the project
-npm run build
-
-# Install globally (optional)
-npm link
-```
+1. **Analyzes Recent Code Changes**: Clones a repository and examines significant commits from the last N days
+2. **Extracts Business Requirements**: Uses AI to understand what each developer was trying to accomplish  
+3. **Tests AI Replication**: Asks Claude Code to implement the same functionality from scratch
+4. **Progressive Hints**: If AI can't match the original, provides increasingly specific hints
+5. **Scores Complexity**: Calculates a score based on how many hints were needed and other factors
 
 ## Prerequisites
 
-1. **Node.js 18+**: Required for running the application (ES modules support)
-2. **Anthropic API Key**: For Claude API access
+- **Node.js 18+**: Required for running the application
+- **Anthropic API Key**: Get yours from [console.anthropic.com](https://console.anthropic.com/)
 
-**Note**: Claude Code SDK is included as a project dependency - no separate
-installation required!
+## Authentication
 
-## Configuration
-
-Create a `.env` file in the project root:
+DevScorer stores your API key securely in your system keychain:
 
 ```bash
-# Required
-ANTHROPIC_API_KEY=sk-ant-your-api-key-here
+# Store API key securely (one-time setup)
+devscorer login
 
-# Optional
-LOG_LEVEL=info                          # debug, info, warn, error
-MAX_CONCURRENT_ANALYSIS=3               # Parallel processing limit
-CLAUDE_MODEL=claude-3-5-sonnet-20241022 # Claude model to use
-MAX_HINTS_PER_ANALYSIS=10               # Maximum hints per contribution
-SIMILARITY_THRESHOLD=0.85               # AI match threshold
+# Check authentication status
+devscorer auth-status
+
+# Remove stored API key
+devscorer logout
 ```
+
+For development/CI environments, you can also use the `ANTHROPIC_API_KEY` environment variable.
 
 ## Usage
 
@@ -65,66 +56,64 @@ SIMILARITY_THRESHOLD=0.85               # AI match threshold
 
 ```bash
 # Analyze the last 7 days (default)
-git-scorer https://github.com/yourcompany/yourrepo
+devscorer https://github.com/yourcompany/yourrepo
 
 # Analyze the last 30 days
-git-scorer https://github.com/yourcompany/yourrepo --days 30
+devscorer https://github.com/yourcompany/yourrepo --days 30
 
 # Enable verbose logging
-git-scorer https://github.com/yourcompany/yourrepo --verbose
+devscorer https://github.com/yourcompany/yourrepo --verbose
 ```
 
 ### Single Commit Analysis
 
 ```bash
 # Analyze a specific commit by hash
-git-scorer https://github.com/yourcompany/yourrepo --commit abc123def
+devscorer https://github.com/yourcompany/yourrepo --commit abc123def
 
 # Analyze specific commit with debug output
-git-scorer https://github.com/yourcompany/yourrepo --commit abc123def --debug
+devscorer https://github.com/yourcompany/yourrepo --commit abc123def --debug
 ```
 
 ### Output Formats
 
 ```bash
 # Default table format (console output)
-git-scorer https://github.com/yourcompany/yourrepo
+devscorer https://github.com/yourcompany/yourrepo
 
 # JSON format
-git-scorer https://github.com/yourcompany/yourrepo --format json
+devscorer https://github.com/yourcompany/yourrepo --format json
 
 # CSV format
-git-scorer https://github.com/yourcompany/yourrepo --format csv
+devscorer https://github.com/yourcompany/yourrepo --format csv
 
 # Save to file
-git-scorer https://github.com/yourcompany/yourrepo --output results.json
+devscorer https://github.com/yourcompany/yourrepo --output results.json
 ```
 
-### Check Configuration
+### System Check
 
 ```bash
-# Verify Claude Code SDK is available and configuration is valid
-git-scorer check
+# Verify configuration and dependencies
+devscorer check
 ```
 
 ## Modern Git Workflow Support
 
 This tool is designed to work with modern Git workflows:
 
-- **Individual Commits**: Analyzes commits directly rather than requiring merge
-  commits
+- **Individual Commits**: Analyzes commits directly rather than requiring merge commits
 - **Squash Merges**: Works with repositories using squash-and-merge workflows
 - **Rebase Workflows**: Compatible with rebase-heavy development practices
-- **Smart Filtering**: Automatically skips trivial commits (version bumps,
-  formatting, etc.)
+- **Smart Filtering**: Automatically skips trivial commits (version bumps, formatting, etc.)
 
 ### What Gets Analyzed
 
 The tool focuses on **significant commits** and filters out:
 
 - Version bumps and releases
-- Minor formatting and linting changes
-- Documentation-only updates
+- Minor formatting and linting changes  
+- Documentation-only updates (scored separately)
 - Automated commits (CI/CD)
 
 ## Understanding the Scores
@@ -142,13 +131,13 @@ The tool focuses on **significant commits** and filters out:
 1. **Base Complexity**: Lines changed, files modified, code patterns
 2. **Hint Complexity**: Number and specificity of hints needed
 3. **Attempt Penalty**: How many tries Claude Code needed
-4. **Difficulty Bonus**: Extra points for AI-resistant implementations
+4. **Documentation Bonus**: Extra points for mixed logic/documentation contributions
 
 ## Example Output
 
 ```
 ================================================================================
-GIT CONTRIBUTION SCORER REPORT
+DEVSCORER REPORT
 ================================================================================
 Repository: https://github.com/yourcompany/yourrepo
 Analysis Date: 2025-01-15
@@ -159,7 +148,7 @@ Average Score: 34.2
 TOP PERFORMERS:
 ----------------------------------------
 1. alice.developer
-2. bob.engineer
+2. bob.engineer  
 3. charlie.coder
 
 COMPLEXITY DISTRIBUTION:
@@ -180,98 +169,46 @@ Score | Developer      | Branch              | Description
 ...
 ```
 
-## Development
-
-### Running Tests
-
-```bash
-npm test
-npm run test:watch
-```
-
-### Building
-
-```bash
-npm run build
-npm run clean  # Clean build directory
-```
-
-### Linting
-
-```bash
-npm run lint
-```
-
-## Architecture
-
-```
-src/
-├── core/
-│   ├── git-analyzer.ts       # Git operations and commit analysis
-│   ├── business-extractor.ts # Extract business purpose from commits
-│   ├── claude-runner.ts      # Claude Code integration
-│   ├── code-comparator.ts    # Compare functionality equivalence
-│   └── scoring-engine.ts     # Calculate complexity scores
-├── utils/
-│   ├── config.ts            # Configuration management
-│   ├── logger.ts            # Winston logging setup
-│   └── temp-manager.ts      # Temporary file management
-└── types/
-    └── index.ts             # TypeScript definitions
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"Claude Code SDK is not available"**
-   - Ensure dependencies are installed: `npm install`
-   - Check that the build completed successfully: `npm run build`
-
-2. **"Missing required environment variables"**
-   - Set `ANTHROPIC_API_KEY` in your `.env` file
-   - Get your API key from: https://console.anthropic.com/
-
-3. **"Failed to clone repository"**
-   - Ensure the repository URL is valid and accessible
-   - Check if you need authentication for private repositories
-
-4. **High memory usage**
-   - Reduce `MAX_CONCURRENT_ANALYSIS` in your configuration
-   - Use a smaller `days` value for initial testing
-
 ### Debug Mode
 
 Enable debug logging for detailed troubleshooting:
 
 ```bash
-git-scorer https://github.com/yourcompany/yourrepo --debug
+devscorer https://github.com/yourcompany/yourrepo --debug
+```
+
+## Command Reference
+
+```bash
+devscorer [options] <repo-url>
+
+Options:
+  -d, --days <number>     Number of days to analyze (default: 7)
+  -l, --limit <number>    Maximum commits to analyze (for testing)
+  -c, --commit <hash>     Analyze specific commit by hash
+  -o, --output <file>     Output file for results (JSON format)
+  --format <type>         Output format: table|json|csv (default: table)
+  --verbose               Enable verbose logging
+  --debug                 Enable debug logging
+
+Commands:
+  login                   Store API key securely in system keychain
+  logout                  Remove stored API key from keychain  
+  auth-status            Show authentication status
+  check                  Verify configuration and dependencies
 ```
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run `npm test` and `npm run lint`
-6. Submit a pull request
+Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and contribution guidelines.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Security
 
-- API keys are stored as environment variables only
+- API keys are stored securely in your system keychain
 - Temporary directories are cleaned up automatically
 - No sensitive data is logged or stored permanently
 - Repository clones are isolated in temporary directories
-
-## Roadmap
-
-- [ ] Support for additional git hosting platforms
-- [ ] Integration with GitHub Actions for automated scoring
-- [ ] Web dashboard for team analytics
-- [ ] Support for additional programming languages
-- [ ] Machine learning model for improved scoring accuracy
