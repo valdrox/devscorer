@@ -48,7 +48,7 @@ async function loadConfig(): Promise<Config> {
     logLevel: getEnvVar('LOG_LEVEL', 'info') as 'debug' | 'info' | 'warn' | 'error',
     maxConcurrentAnalysis: getEnvNumber('MAX_CONCURRENT_ANALYSIS', 3),
     claudeModel: getEnvVar('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022'),
-    maxHintsPerAnalysis: getEnvNumber('MAX_HINTS_PER_ANALYSIS', 10),
+    maxHintsPerAnalysis: getEnvNumber('MAX_HINTS_PER_ANALYSIS', 5),
     similarityThreshold: getEnvFloat('SIMILARITY_THRESHOLD', 0.85),
   };
 }
@@ -68,7 +68,7 @@ export const config = new Proxy({} as Omit<Config, 'anthropicApiKey'> & {
       logLevel: getEnvVar('LOG_LEVEL', 'info') as 'debug' | 'info' | 'warn' | 'error',
       maxConcurrentAnalysis: getEnvNumber('MAX_CONCURRENT_ANALYSIS', 3),
       claudeModel: getEnvVar('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022'),
-      maxHintsPerAnalysis: getEnvNumber('MAX_HINTS_PER_ANALYSIS', 10),
+      maxHintsPerAnalysis: getEnvNumber('MAX_HINTS_PER_ANALYSIS', 5),
       similarityThreshold: getEnvFloat('SIMILARITY_THRESHOLD', 0.85),
     };
     return syncConfig[prop as keyof typeof syncConfig];
@@ -117,11 +117,11 @@ export async function validateConfig(): Promise<void> {
     });
   }
 
-  if (config.maxHintsPerAnalysis < 1 || config.maxHintsPerAnalysis > 20) {
-    throw new ConfigurationError('MAX_HINTS_PER_ANALYSIS must be between 1 and 20', {
+  if (config.maxHintsPerAnalysis < 1 || config.maxHintsPerAnalysis > 10) {
+    throw new ConfigurationError('MAX_HINTS_PER_ANALYSIS must be between 1 and 10', {
       provided: config.maxHintsPerAnalysis,
       min: 1,
-      max: 20,
+      max: 10,
     });
   }
 

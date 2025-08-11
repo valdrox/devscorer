@@ -370,7 +370,7 @@ ${gaps.map(gap => `- ${gap}`).join('\n')}
 SIGNIFICANT DIFFERENCES:
 ${differences.map(diff => `- ${diff}`).join('\n')}
 
-HINT LEVEL: ${hintLevel} (1=vague, 10=very specific)
+HINT LEVEL: ${hintLevel} (1=look in that direction, 5=almost give away solution)
 
 PREVIOUS HINTS GIVEN:
 ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}
@@ -378,13 +378,14 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}
 Provide a hint that:
 1. Is more specific than previous hints
 2. Guides toward addressing the most critical gaps
-3. Doesn't give away the complete solution
-4. Is appropriate for the hint level (${hintLevel})
+3. Is appropriate for the hint level (${hintLevel})
 
 Hint levels guide specificity:
-- Levels 1-3: General guidance about approach or missing concepts
-- Levels 4-6: More specific about what needs to be implemented
-- Levels 7-10: Very specific about how to implement missing functionality
+- Level 1: Point in the general direction - "consider X area"
+- Level 2: Suggest approach - "think about Y pattern"
+- Level 3: Be more specific - "you need to handle Z"
+- Level 4: Give technical details - "implement using ABC"
+- Level 5: Almost give away the solution - very specific guidance
 
 Format your response as just the hint text, nothing else.`;
 
@@ -397,15 +398,17 @@ Format your response as just the hint text, nothing else.`;
 TECHNICAL IMPROVEMENTS NEEDED:
 ${technicalFactors.map(factor => `- ${factor}`).join('\n')}
 
-HINT LEVEL: ${hintLevel} (1=vague architectural guidance, 10=specific implementation details)
+HINT LEVEL: ${hintLevel} (1=look in that direction, 5=almost give away solution)
 PREVIOUS HINTS: ${previousHints.map(h => h.content).join('; ')}
 
-As a Senior Staff Engineer, provide a progressive hint that guides toward these technical improvements without giving away the solution. Focus on engineering best practices and robust implementation.
+As a Senior Staff Engineer, provide a progressive hint that guides toward these technical improvements. Focus on engineering best practices and robust implementation.
 
 Hint levels guide specificity:
-- Levels 1-3: General architectural and design principles
-- Levels 4-6: More specific technical approaches and patterns
-- Levels 7-10: Very specific implementation techniques and code structure
+- Level 1: Point in the general direction - "consider X area"
+- Level 2: Suggest architectural approach - "think about Y pattern"
+- Level 3: Be more specific about what needs doing - "you need to handle Z"
+- Level 4: Give technical details - "implement using ABC approach"
+- Level 5: Almost give away the solution - very specific implementation guidance
 
 Format your response as just the hint text, nothing else.`;
   }
@@ -414,9 +417,9 @@ Format your response as just the hint text, nothing else.`;
     const cleanHint = hintText.trim();
 
     let hintType: 'general' | 'specific' | 'technical';
-    if (hintLevel <= 3) {
+    if (hintLevel <= 2) {
       hintType = 'general';
-    } else if (hintLevel <= 6) {
+    } else if (hintLevel <= 4) {
       hintType = 'specific';
     } else {
       hintType = 'technical';
@@ -434,9 +437,9 @@ Format your response as just the hint text, nothing else.`;
 
     if (gaps.length > 0) {
       const primaryGap = gaps[0];
-      if (hintLevel <= 3) {
+      if (hintLevel <= 2) {
         hintContent = `Think about how to address: ${primaryGap}`;
-      } else if (hintLevel <= 6) {
+      } else if (hintLevel <= 4) {
         hintContent = `You need to implement functionality for: ${primaryGap}`;
       } else {
         hintContent = `Specifically address this missing functionality: ${primaryGap}`;
@@ -444,9 +447,9 @@ Format your response as just the hint text, nothing else.`;
     }
 
     let hintType: 'general' | 'specific' | 'technical';
-    if (hintLevel <= 3) {
+    if (hintLevel <= 2) {
       hintType = 'general';
-    } else if (hintLevel <= 6) {
+    } else if (hintLevel <= 4) {
       hintType = 'specific';
     } else {
       hintType = 'technical';
@@ -464,9 +467,9 @@ Format your response as just the hint text, nothing else.`;
 
     if (technicalFactors.length > 0) {
       const primaryFactor = technicalFactors[0];
-      if (hintLevel <= 3) {
+      if (hintLevel <= 2) {
         hintContent = `As a Senior Staff Engineer, consider the architectural implications of: ${primaryFactor}`;
-      } else if (hintLevel <= 6) {
+      } else if (hintLevel <= 4) {
         hintContent = `You need to implement better technical practices for: ${primaryFactor}`;
       } else {
         hintContent = `Specifically address this technical improvement: ${primaryFactor}`;
@@ -474,9 +477,9 @@ Format your response as just the hint text, nothing else.`;
     }
 
     let hintType: 'general' | 'specific' | 'technical';
-    if (hintLevel <= 3) {
+    if (hintLevel <= 2) {
       hintType = 'general';
-    } else if (hintLevel <= 6) {
+    } else if (hintLevel <= 4) {
       hintType = 'specific';
     } else {
       hintType = 'technical';
