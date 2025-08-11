@@ -64,11 +64,7 @@ export class ClaudeRunner {
       `Building Claude Code prompt with ${businessPurpose.requirements.length} requirements and ${previousHints.length} hints`,
     );
 
-    let prompt = `CRITICAL: First verify you're in the correct repository:
-1. Run 'pwd' to check your current directory
-2. Run 'ls -la' to verify this is the right repository  
-3. Look for key files that indicate this is the target repository
-4. If you're in the wrong directory, STOP and throw an error immediately
+    let prompt = `
 
 WORKING DIRECTORY REQUIREMENTS:
 - Must contain .git directory

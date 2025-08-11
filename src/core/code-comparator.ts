@@ -138,13 +138,12 @@ DIFFERENCES: [List significant differences in FUNCTIONAL approach or implementat
 (etc.)
 
 CRITICAL EVALUATION RULES:
-1. IGNORE documentation differences (README, comments, docs files, etc.)
-2. IGNORE minor config/data file differences unless they impact core functionality
-3. Focus ONLY on business logic, algorithms, and functional behavior
-4. Consider: Do both diffs implement the same functional requirements?
-5. Consider: Do they handle the same use cases and edge cases in the application logic?
-6. Different file paths, variable names, or documentation are acceptable if the core functionality is equivalent
-7. If the original contains ONLY documentation changes, rate EQUIVALENT=true and SIMILARITY_SCORE=1.0`;
+1. Focus on business logic, algorithms, and functional behavior
+2. IGNORE documentation differences (README, comments, docs files, etc.)
+3. Consider: Do both diffs implement the same functional requirements?
+4. Consider: Do they handle the same use cases and edge cases in the application logic?
+5. Different file paths, variable names, or documentation are acceptable if the core functionality is equivalent
+6. If the original contains ONLY documentation changes, rate EQUIVALENT=true and SIMILARITY_SCORE=1.0`;
   }
 
   private buildTechnicalComparisonPrompt(contributionA: string, contributionB: string, requirements: string[]): string {
