@@ -15,6 +15,13 @@ import { authManager } from '../auth/auth-manager.js';
 export class GitHubIssuesAnalyzer {
   private octokit: Octokit | null = null;
   private claudeRunner: ClaudeRunner;
+  private llmStats = {
+    totalCalls: 0,
+    successfulCalls: 0,
+    failedCalls: 0,
+    totalDuration: 0,
+    averageDuration: 0,
+  };
 
   constructor() {
     this.claudeRunner = new ClaudeRunner();
@@ -138,6 +145,18 @@ export class GitHubIssuesAnalyzer {
         evaluations.push(fallbackEvaluation);
       }
     }
+
+    // Log final LLM statistics
+    logger.info('='.repeat(60));
+    logger.info('📊 LLM ANALYSIS COMPLETE - FINAL STATISTICS');
+    logger.info('='.repeat(60));
+    logger.info(`Total LLM calls made: ${this.llmStats.totalCalls}`);
+    logger.info(`Successful evaluations: ${this.llmStats.successfulCalls}`);
+    logger.info(`Failed evaluations: ${this.llmStats.failedCalls}`);
+    logger.info(`Success rate: ${this.llmStats.totalCalls > 0 ? Math.round((this.llmStats.successfulCalls / this.llmStats.totalCalls) * 100) : 0}%`);
+    logger.info(`Average response time: ${Math.round(this.llmStats.averageDuration)}ms`);
+    logger.info(`Total LLM processing time: ${Math.round(this.llmStats.totalDuration / 1000)}s`);
+    logger.info('='.repeat(60));
 
     return this.generateReport(repoUrl, days, evaluations);
   }
@@ -392,11 +411,29 @@ export class GitHubIssuesAnalyzer {
     logger.debug(`Evaluating developer: ${activity.developer}`);
 
     const prompt = this.buildEvaluationPrompt(activity);
-    logger.debug(`Evaluation prompt for ${activity.developer}: ${prompt.substring(0, 200)}...`);
+    
+    // Log full prompt for debugging (only in debug mode)
+    logger.debug('='.repeat(80));
+    logger.debug(`FULL LLM PROMPT FOR: ${activity.developer}`);
+    logger.debug('='.repeat(80));
+    logger.debug(prompt);
+    logger.debug('='.repeat(80));
+    
+    const startTime = Date.now();
+    this.llmStats.totalCalls++;
     
     // Use existing Claude runner
     const response = await this.claudeRunner.runAnalysis(prompt);
-    logger.debug(`Raw LLM response for ${activity.developer} (${response.length} chars): ${response.substring(0, 300)}...`);
+    
+    const duration = Date.now() - startTime;
+    this.llmStats.totalDuration += duration;
+    
+    // Log full response for debugging
+    logger.debug('='.repeat(80));
+    logger.debug(`FULL LLM RESPONSE FOR: ${activity.developer} (${response.length} chars, ${duration}ms)`);
+    logger.debug('='.repeat(80));
+    logger.debug(response);
+    logger.debug('='.repeat(80));
     
     try {
       // Try to extract JSON from markdown code blocks if present
@@ -404,14 +441,26 @@ export class GitHubIssuesAnalyzer {
       
       // Check if response is wrapped in markdown code blocks
       if (jsonResponse.startsWith('```json') || jsonResponse.startsWith('```')) {
-        logger.debug(`Detected markdown code block for ${activity.developer}, extracting JSON...`);
+        logger.debug(`🔧 Detected markdown code block for ${activity.developer}, extracting JSON...`);
         // Remove markdown code block markers
         jsonResponse = jsonResponse.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?\s*```\s*$/, '').trim();
-        logger.debug(`Extracted JSON for ${activity.developer}: ${jsonResponse.substring(0, 200)}...`);
+        logger.debug('='.repeat(40));
+        logger.debug(`CLEANED JSON FOR: ${activity.developer}`);
+        logger.debug('='.repeat(40));
+        logger.debug(jsonResponse);
+        logger.debug('='.repeat(40));
+      } else {
+        logger.debug(`✅ Response for ${activity.developer} is already clean JSON (no markdown blocks)`);
       }
       
       const analysis = JSON.parse(jsonResponse);
-      logger.debug(`Successfully parsed JSON for ${activity.developer}:`, analysis);
+      logger.debug(`✅ Successfully parsed JSON for ${activity.developer}:`);
+      logger.debug(`   Technical Quality: ${analysis.technicalQuality}`);
+      logger.debug(`   Communication: ${analysis.communication}`);
+      logger.debug(`   Collaboration: ${analysis.collaboration}`);
+      logger.debug(`   Delivery: ${analysis.delivery}`);
+      logger.debug(`   Examples: ${analysis.examples?.length || 0} provided`);
+      logger.debug(`   Suggestions: ${analysis.suggestions?.length || 0} provided`);
       
       const overallScore = (
         analysis.technicalQuality + 
@@ -419,6 +468,11 @@ export class GitHubIssuesAnalyzer {
         analysis.collaboration + 
         analysis.delivery
       ) / 4;
+
+      this.llmStats.successfulCalls++;
+      this.llmStats.averageDuration = this.llmStats.totalDuration / this.llmStats.totalCalls;
+      
+      logger.debug(`📊 LLM Stats Update: ${this.llmStats.successfulCalls}/${this.llmStats.totalCalls} successful, avg ${Math.round(this.llmStats.averageDuration)}ms`);
 
       return {
         developer: activity.developer,
@@ -431,8 +485,13 @@ export class GitHubIssuesAnalyzer {
         suggestions: analysis.suggestions || [],
       };
     } catch (error) {
-      logger.error(`Failed to parse LLM response for ${activity.developer}: ${error}`);
+      this.llmStats.failedCalls++;
+      this.llmStats.averageDuration = this.llmStats.totalDuration / this.llmStats.totalCalls;
+      
+      logger.error(`❌ Failed to parse LLM response for ${activity.developer}: ${error}`);
       logger.error(`Problematic response: ${response}`);
+      logger.debug(`📊 LLM Stats Update: ${this.llmStats.successfulCalls}/${this.llmStats.totalCalls} successful (${this.llmStats.failedCalls} failed), avg ${Math.round(this.llmStats.averageDuration)}ms`);
+      
       return {
         developer: activity.developer,
         technicalQuality: 5,

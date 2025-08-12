@@ -109,7 +109,7 @@ class GitContributionScorer {
       logger.info(`Analyzing commit: ${contribution.branch} by ${contribution.author}`);
 
       const score = await this.analyzeContribution(contribution);
-      
+
       await this.gitAnalyzer.cleanup();
       logger.info(`Analysis completed for commit ${commitHash}`);
 
@@ -120,9 +120,9 @@ class GitContributionScorer {
     }
   }
 
-  private async categorizeContribution(contribution: GitContribution): Promise<{ 
-    type: 'documentation' | 'logic' | 'mixed', 
-    documentationComplexity?: 'small' | 'medium' | 'heavy' 
+  private async categorizeContribution(contribution: GitContribution): Promise<{
+    type: 'documentation' | 'logic' | 'mixed';
+    documentationComplexity?: 'small' | 'medium' | 'heavy';
   }> {
     const categorizationPrompt = `
 Analyze this git diff and categorize the contribution:
@@ -146,29 +146,48 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
     try {
       // For now, use a simple heuristic. Later we can integrate with an LLM service
       const diff = contribution.diff.toLowerCase();
-      
-      // Check for logic file extensions and patterns
-      const hasLogicChanges = diff.match(/\.(js|ts|py|java|cpp|go|rs|c|h|php|rb|swift|kt|scala|elm|hs)[\s\n]/) ||
-                             diff.includes('function ') || diff.includes('class ') || diff.includes('import ') ||
-                             diff.includes('def ') || diff.includes('const ') || diff.includes('let ') ||
-                             diff.includes('var ') || diff.includes('if (') || diff.includes('for (') ||
-                             diff.includes('=>') || diff.includes('return ');
-      
-      // Check for documentation file patterns
-      const hasDocChanges = diff.includes('readme') || diff.match(/\.(md|txt|rst|adoc)[\s\n]/) ||
-                           diff.includes('changelog') || diff.includes('license') ||
-                           diff.includes('contributing') || diff.includes('code_of_conduct') ||
-                           diff.includes('//') || diff.includes('/*') || diff.includes('*') ||
-                           diff.includes('package.json') || diff.includes('.yml') || diff.includes('.yaml') ||
-                           diff.includes('.toml') || diff.includes('.ini');
 
-      // Simple line count heuristic for doc complexity  
+      // Check for logic file extensions and patterns
+      const hasLogicChanges =
+        diff.match(/\.(js|ts|py|java|cpp|go|rs|c|h|php|rb|swift|kt|scala|elm|hs)[\s\n]/) ||
+        diff.includes('function ') ||
+        diff.includes('class ') ||
+        diff.includes('import ') ||
+        diff.includes('def ') ||
+        diff.includes('const ') ||
+        diff.includes('let ') ||
+        diff.includes('var ') ||
+        diff.includes('if (') ||
+        diff.includes('for (') ||
+        diff.includes('=>') ||
+        diff.includes('return ');
+
+      // Check for documentation file patterns
+      const hasDocChanges =
+        diff.includes('readme') ||
+        diff.match(/\.(md|txt|rst|adoc)[\s\n]/) ||
+        diff.includes('changelog') ||
+        diff.includes('license') ||
+        diff.includes('contributing') ||
+        diff.includes('code_of_conduct') ||
+        diff.includes('//') ||
+        diff.includes('/*') ||
+        diff.includes('*') ||
+        diff.includes('package.json') ||
+        diff.includes('.yml') ||
+        diff.includes('.yaml') ||
+        diff.includes('.toml') ||
+        diff.includes('.ini');
+
+      // Simple line count heuristic for doc complexity
       const linesChanged = contribution.linesChanged;
       let documentationComplexity: 'small' | 'medium' | 'heavy' = 'small';
       if (linesChanged > 50) documentationComplexity = 'heavy';
       else if (linesChanged > 15) documentationComplexity = 'medium';
 
-      logger.debug(`Categorization analysis: hasLogicChanges=${hasLogicChanges}, hasDocChanges=${hasDocChanges}, linesChanged=${linesChanged}`);
+      logger.debug(
+        `Categorization analysis: hasLogicChanges=${hasLogicChanges}, hasDocChanges=${hasDocChanges}, linesChanged=${linesChanged}`
+      );
 
       if (hasLogicChanges && hasDocChanges) {
         return { type: 'mixed', documentationComplexity };
@@ -183,20 +202,23 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
     }
   }
 
-  private async scoreDocumentationOnly(contribution: GitContribution, documentationComplexity: 'small' | 'medium' | 'heavy'): Promise<ContributionScore> {
+  private async scoreDocumentationOnly(
+    contribution: GitContribution,
+    documentationComplexity: 'small' | 'medium' | 'heavy'
+  ): Promise<ContributionScore> {
     // Base scores for documentation complexity
     const baseScores = {
       small: 8,
-      medium: 15, 
-      heavy: 25
+      medium: 15,
+      heavy: 25,
     };
 
     const baseScore = baseScores[documentationComplexity];
-    
+
     // Add some variability based on lines changed and files modified
     const linesBonus = Math.min(contribution.linesChanged * 0.1, 10);
     const filesBonus = Math.min(contribution.commits.length * 2, 8);
-    
+
     const finalScore = Math.round(baseScore + linesBonus + filesBonus);
 
     logger.info(`Documentation-only contribution scored: ${finalScore} (${documentationComplexity} complexity)`);
@@ -206,12 +228,12 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
       {
         summary: `Documentation update: ${documentationComplexity} complexity`,
         requirements: [`Update documentation with ${documentationComplexity} level changes`],
-        technicalContext: 'Documentation-only contribution, scored based on complexity and scope'
+        technicalContext: 'Documentation-only contribution, scored based on complexity and scope',
       },
       finalScore,
       0, // No hints needed for doc-only
       [], // No hints
-      1   // Single "attempt" 
+      1 // Single "attempt"
     );
   }
 
@@ -221,7 +243,9 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
 
     // Categorize the contribution to determine analysis approach
     const category = await this.categorizeContribution(contribution);
-    logger.debug(`Contribution categorized as: ${category.type} ${category.documentationComplexity ? `(${category.documentationComplexity} docs)` : ''}`);
+    logger.debug(
+      `Contribution categorized as: ${category.type} ${category.documentationComplexity ? `(${category.documentationComplexity} docs)` : ''}`
+    );
 
     // Handle documentation-only contributions with direct scoring
     if (category.type === 'documentation' && category.documentationComplexity) {
@@ -284,7 +308,7 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
           logger.debug(
             `❌ Claude Code didn't match yet for ${contribution.branch} (score: ${technicalComparison.similarityScore}, threshold: ${config.similarityThreshold})`
           );
-          
+
           // Only generate hint if human contribution is technically superior
           const humanTechnicalFactors = technicalComparison.factorsThatMakeABetter;
           const nextHint = await this.codeComparator.generateTechnicalHint(
@@ -292,15 +316,19 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
             hintsGiven.length + 1,
             hintsGiven
           );
-          
+
           if (nextHint === null) {
             // AI implementation is equal or better - stop trying
-            logger.debug(`🤖 AI implementation is technically equal or superior for ${contribution.branch} - stopping hint generation`);
+            logger.debug(
+              `🤖 AI implementation is technically equal or superior for ${contribution.branch} - stopping hint generation`
+            );
             break;
           }
-          
+
           hintsGiven.push(nextHint);
-          logger.debug(`💡 Generated technical hint ${hintsGiven.length} for ${contribution.branch}: ${nextHint.content}`);
+          logger.debug(
+            `💡 Generated technical hint ${hintsGiven.length} for ${contribution.branch}: ${nextHint.content}`
+          );
         }
       } catch (error) {
         logger.error(`Error during attempt ${attempts} for ${contribution.branch}: ${error}`);
@@ -331,12 +359,14 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
     if (contributionCategory.type === 'mixed' && contributionCategory.documentationComplexity) {
       const docBonus = {
         small: 3,
-        medium: 7, 
-        heavy: 12
+        medium: 7,
+        heavy: 12,
       };
       const bonus = docBonus[contributionCategory.documentationComplexity];
       complexityScore += bonus;
-      logger.debug(`Added ${bonus} points for ${contributionCategory.documentationComplexity} documentation complexity (mixed contribution)`);
+      logger.debug(
+        `Added ${bonus} points for ${contributionCategory.documentationComplexity} documentation complexity (mixed contribution)`
+      );
     }
 
     const contributionScore = this.scoringEngine.createContributionScore(
@@ -358,10 +388,11 @@ Respond with JSON: {"type": "documentation|logic|mixed", "documentationComplexit
 async function main() {
   const program = new Command();
 
+  program.name('devscorer').description('Dev performance evaluator').version('1.0.0');
+
   program
-    .name('devscorer')
+    .command('review')
     .description('Analyze git contributions complexity using AI')
-    .version('1.0.0')
     .argument('<repo-url>', 'GitHub repository URL')
     .option('-l, --limit <number>', 'Maximum number of commits to analyze (for faster testing)')
     .option('-c, --commit <hash>', 'Analyze a specific commit by hash')
@@ -370,6 +401,7 @@ async function main() {
     .option('--verbose', 'Enable verbose logging')
     .option('--debug', 'Enable debug logging')
     .action(async (repoUrl: string, options: any) => {
+      logger.info(JSON.stringify(options));
       try {
         if (options.debug) {
           setLogLevel('debug');
@@ -412,7 +444,7 @@ async function main() {
           console.log(chalk.gray(`Analyzing commit ${commitHash} from ${repoUrl}...\n`));
 
           const score = await scorer.analyzeCommit(repoUrl, commitHash);
-          
+
           if (!score) {
             console.log(chalk.yellow('⚠️ No analysis result for this commit'));
             return;
@@ -540,10 +572,10 @@ async function main() {
       try {
         const anthropicStatus = await authManager.getAuthStatus();
         const githubStatus = await authManager.getGitHubAuthStatus();
-        
+
         console.log(chalk.blue('🔐 Authentication Status'));
         console.log('');
-        
+
         console.log(chalk.bold('Anthropic API (for code analysis):'));
         if (anthropicStatus.authenticated) {
           console.log(chalk.green('  ✅ Authenticated'));
@@ -555,7 +587,7 @@ async function main() {
           console.log(chalk.red('  ❌ Not authenticated'));
           console.log('     Run: devscorer login');
         }
-        
+
         console.log('');
         console.log(chalk.bold('GitHub API (for issues/PR analysis):'));
         if (githubStatus.authenticated) {
@@ -587,6 +619,7 @@ async function main() {
       try {
         if (options.debug) {
           setLogLevel('debug');
+          logger.debug('🔧 Debug logging enabled - you should see detailed LLM prompts and responses');
         } else if (options.verbose) {
           setLogLevel('info');
         }
@@ -663,7 +696,7 @@ function formatAsCSV(report: AnalysisReport): string {
 
 function formatGitHubReport(report: any): string {
   const lines: string[] = [];
-  
+
   lines.push('================================================================================');
   lines.push('GITHUB ISSUES & PR ANALYSIS REPORT');
   lines.push('================================================================================');
@@ -704,7 +737,7 @@ function formatGitHubReport(report: any): string {
     const deliveryStr = analysis.delivery.toString().padStart(8);
 
     lines.push(`${scoreStr} | ${developerStr} | ${techStr} | ${commStr} | ${collabStr} | ${deliveryStr} |`);
-    
+
     // Add examples and suggestions
     if (analysis.examples.length > 0) {
       lines.push(`      Examples: ${analysis.examples[0]}`);
@@ -720,7 +753,9 @@ function formatGitHubReport(report: any): string {
 
 function formatGitHubAsCSV(report: any): string {
   const lines: string[] = [];
-  lines.push('Developer,Overall Score,Technical Quality,Communication,Collaboration,Delivery,Top Example,Top Suggestion');
+  lines.push(
+    'Developer,Overall Score,Technical Quality,Communication,Collaboration,Delivery,Top Example,Top Suggestion'
+  );
 
   for (const analysis of report.developerAnalyses) {
     const line = [
@@ -744,9 +779,9 @@ function formatGitHubAsCSV(report: any): string {
 import { fileURLToPath } from 'url';
 
 const currentFile = fileURLToPath(import.meta.url);
-const isMainModule = process.argv[1] === currentFile || 
-                     (fs.lstatSync(process.argv[1]).isSymbolicLink() && 
-                      fs.realpathSync(process.argv[1]) === currentFile);
+const isMainModule =
+  process.argv[1] === currentFile ||
+  (fs.lstatSync(process.argv[1]).isSymbolicLink() && fs.realpathSync(process.argv[1]) === currentFile);
 
 if (isMainModule) {
   main().catch(error => {
