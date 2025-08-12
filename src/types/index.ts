@@ -88,3 +88,88 @@ export interface Config {
   maxHintsPerAnalysis: number;
   similarityThreshold: number;
 }
+
+// GitHub-specific types
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  state: 'open' | 'closed';
+  user: {
+    login: string;
+  };
+  comments: number;
+}
+
+export interface GitHubPullRequest {
+  number: number;
+  title: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  state: 'open' | 'closed' | 'merged';
+  user: {
+    login: string;
+  };
+  comments: number;
+  review_comments: number;
+}
+
+export interface GitHubReview {
+  id: number;
+  body: string;
+  state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED';
+  submitted_at: string;
+  user: {
+    login: string;
+  };
+  pull_request: {
+    title: string;
+    number: number;
+  };
+}
+
+export interface GitHubComment {
+  id: number;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  user: {
+    login: string;
+  };
+  issue_url?: string;
+  pull_request_url?: string;
+}
+
+export interface DeveloperActivity {
+  developer: string;
+  issues: GitHubIssue[];
+  pullRequests: GitHubPullRequest[];
+  reviews: GitHubReview[];
+  comments: GitHubComment[];
+}
+
+export interface GitHubAnalysis {
+  developer: string;
+  technicalQuality: number;
+  communication: number;
+  collaboration: number;
+  delivery: number;
+  overallScore: number;
+  examples: string[];
+  suggestions: string[];
+}
+
+export interface GitHubReport {
+  repositoryUrl: string;
+  analysisDate: Date;
+  daysCovered: number;
+  developerAnalyses: GitHubAnalysis[];
+  summary: {
+    topPerformers: string[];
+    averageScore: number;
+    teamInsights: string[];
+  };
+}

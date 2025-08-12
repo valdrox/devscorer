@@ -458,6 +458,51 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     // since Claude Code sessions need to persist across hint attempts in the same directory
   }
 
+  async runAnalysis(prompt: string): Promise<string> {
+    try {
+      logger.debug('Running LLM analysis for GitHub evaluation');
+
+      const abortController = new AbortController();
+      const timeout = setTimeout(() => abortController.abort(), 60000); // 60 second timeout
+
+      const messages: SDKMessage[] = [];
+
+      for await (const message of query({
+        prompt,
+        abortController,
+        options: {
+          maxTurns: 1,
+          permissionMode: 'bypassPermissions',
+        },
+      })) {
+        messages.push(message);
+      }
+
+      clearTimeout(timeout);
+
+      // Extract text response from the last assistant message
+      const assistantMessages = messages.filter(m => m.type === 'assistant');
+      if (assistantMessages.length === 0) {
+        throw new Error('No response from LLM');
+      }
+
+      const lastMessage = assistantMessages[assistantMessages.length - 1];
+      const content = lastMessage.message.content;
+
+      if (Array.isArray(content)) {
+        const textContent = content.find(c => c.type === 'text');
+        if (textContent && 'text' in textContent) {
+          return textContent.text;
+        }
+      }
+
+      throw new Error('No text content in LLM response');
+    } catch (error) {
+      logger.error(`GitHub analysis LLM call failed: ${error}`);
+      throw new Error(`LLM analysis failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   async isClaudeCodeAvailable(): Promise<boolean> {
     try {
       const testAbortController = new AbortController();

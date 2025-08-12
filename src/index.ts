@@ -9,6 +9,7 @@ import { BusinessExtractor } from './core/business-extractor.js';
 import { ClaudeRunner } from './core/claude-runner.js';
 import { CodeComparator } from './core/code-comparator.js';
 import { ScoringEngine } from './core/scoring-engine.js';
+import { GitHubIssuesAnalyzer } from './core/github-issues-analyzer.js';
 import { ContributionScore, AnalysisReport, GitContribution, Hint } from './types/index.js';
 import { logger, setLogLevel } from './utils/logger.js';
 import { config, validateConfig } from './utils/config.js';
@@ -362,7 +363,6 @@ async function main() {
     .description('Analyze git contributions complexity using AI')
     .version('1.0.0')
     .argument('<repo-url>', 'GitHub repository URL')
-    .option('-d, --days <number>', 'Number of days to analyze', '7')
     .option('-l, --limit <number>', 'Maximum number of commits to analyze (for faster testing)')
     .option('-c, --commit <hash>', 'Analyze a specific commit by hash')
     .option('-o, --output <file>', 'Output file for results (JSON format)')
@@ -380,7 +380,7 @@ async function main() {
         await validateConfig();
         logger.info('Configuration validated successfully');
 
-        const days = parseInt(options.days, 10);
+        const days = parseInt(options.days || '7', 10);
         if (isNaN(days) || days < 1 || days > 365) {
           throw new ValidationError('Days must be a number between 1 and 365', {
             provided: options.days,
@@ -511,7 +511,7 @@ async function main() {
 
   program
     .command('login')
-    .description('Store Anthropic API key securely for Claude Code access')
+    .description('Store API keys securely (Anthropic API key + GitHub token)')
     .action(async () => {
       try {
         await authManager.login();
@@ -523,7 +523,7 @@ async function main() {
 
   program
     .command('logout')
-    .description('Remove stored API key from system keychain')
+    .description('Remove stored API keys from system keychain')
     .action(async () => {
       try {
         await authManager.logout();
@@ -538,22 +538,101 @@ async function main() {
     .description('Show authentication status')
     .action(async () => {
       try {
-        const status = await authManager.getAuthStatus();
+        const anthropicStatus = await authManager.getAuthStatus();
+        const githubStatus = await authManager.getGitHubAuthStatus();
         
-        if (status.authenticated) {
-          console.log(chalk.green('✅ Authenticated'));
-          console.log(`   Method: ${status.method}`);
-          if (status.keyPreview) {
-            console.log(`   API Key: ${status.keyPreview}`);
+        console.log(chalk.blue('🔐 Authentication Status'));
+        console.log('');
+        
+        console.log(chalk.bold('Anthropic API (for code analysis):'));
+        if (anthropicStatus.authenticated) {
+          console.log(chalk.green('  ✅ Authenticated'));
+          console.log(`     Method: ${anthropicStatus.method}`);
+          if (anthropicStatus.keyPreview) {
+            console.log(`     API Key: ${anthropicStatus.keyPreview}`);
           }
         } else {
-          console.log(chalk.red('❌ Not authenticated'));
-          console.log('Run one of:');
-          console.log('  • devscorer login');
-          console.log('  • Set ANTHROPIC_API_KEY environment variable');
+          console.log(chalk.red('  ❌ Not authenticated'));
+          console.log('     Run: devscorer login');
+        }
+        
+        console.log('');
+        console.log(chalk.bold('GitHub API (for issues/PR analysis):'));
+        if (githubStatus.authenticated) {
+          console.log(chalk.green('  ✅ Authenticated'));
+          console.log(`     Method: ${githubStatus.method}`);
+          if (githubStatus.tokenPreview) {
+            console.log(`     Token: ${githubStatus.tokenPreview}`);
+          }
+        } else {
+          console.log(chalk.red('  ❌ Not authenticated'));
+          console.log('     Run: devscorer login');
         }
       } catch (error) {
         console.error(chalk.red(`❌ Status check failed: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('github-analysis')
+    .description('Analyze developer performance through GitHub issues, PRs, and reviews')
+    .argument('<repo-url>', 'GitHub repository URL')
+    .option('-d, --days <number>', 'Number of days to analyze', '7')
+    .option('-o, --output <file>', 'Output file for results (JSON format)')
+    .option('--format <type>', 'Output format (table|json|csv)', 'table')
+    .option('--verbose', 'Enable verbose logging')
+    .option('--debug', 'Enable debug logging')
+    .action(async (repoUrl: string, options: any) => {
+      try {
+        if (options.debug) {
+          setLogLevel('debug');
+        } else if (options.verbose) {
+          setLogLevel('info');
+        }
+
+        await validateConfig();
+        logger.info('Configuration validated successfully');
+
+        const days = parseInt(options.days, 10);
+        if (isNaN(days) || days < 1 || days > 365) {
+          throw new Error('Days must be a number between 1 and 365');
+        }
+
+        if (!repoUrl.match(/github\.com/)) {
+          throw new Error('Repository URL must be a valid GitHub repository URL');
+        }
+
+        const analyzer = new GitHubIssuesAnalyzer();
+
+        console.log(chalk.blue('🔍 GitHub Issues & PR Analysis'));
+        console.log(chalk.gray(`Analyzing ${repoUrl} for the last ${days} days...\n`));
+
+        const report = await analyzer.analyzeRepository(repoUrl, days);
+
+        if (options.output) {
+          await fs.writeJson(options.output, report, { spaces: 2 });
+          console.log(chalk.green(`\n✅ Results saved to ${options.output}`));
+        }
+
+        if (options.format === 'json') {
+          console.log(JSON.stringify(report, null, 2));
+        } else if (options.format === 'csv') {
+          console.log(formatGitHubAsCSV(report));
+        } else {
+          console.log(formatGitHubReport(report));
+        }
+
+        await tempManager.cleanupAll();
+      } catch (error) {
+        console.error(chalk.red(`❌ Error: ${error instanceof Error ? error.message : String(error)}`));
+
+        logger.error('GitHub analysis failed', error as Error, {
+          repository: repoUrl,
+          daysAnalyzed: options.days,
+        });
+
+        await tempManager.cleanupAll();
         process.exit(1);
       }
     });
@@ -575,6 +654,84 @@ function formatAsCSV(report: AnalysisReport): string {
       score.hintsNeeded.toString(),
       score.details.attempts.toString(),
       score.details.baseComplexity.toString(),
+    ].join(',');
+    lines.push(line);
+  }
+
+  return lines.join('\n');
+}
+
+function formatGitHubReport(report: any): string {
+  const lines: string[] = [];
+  
+  lines.push('================================================================================');
+  lines.push('GITHUB ISSUES & PR ANALYSIS REPORT');
+  lines.push('================================================================================');
+  lines.push(`Repository: ${report.repositoryUrl}`);
+  lines.push(`Analysis Date: ${report.analysisDate.toISOString().split('T')[0]}`);
+  lines.push(`Period: Last ${report.daysCovered} days`);
+  lines.push(`Developers Analyzed: ${report.developerAnalyses.length}`);
+  lines.push(`Average Score: ${report.summary.averageScore}/10`);
+  lines.push('');
+
+  if (report.summary.topPerformers.length > 0) {
+    lines.push('TOP PERFORMERS:');
+    lines.push('----------------------------------------');
+    report.summary.topPerformers.forEach((performer: string, index: number) => {
+      lines.push(`${index + 1}. ${performer}`);
+    });
+    lines.push('');
+  }
+
+  lines.push('TEAM INSIGHTS:');
+  lines.push('----------------------------------------');
+  report.summary.teamInsights.forEach((insight: string) => {
+    lines.push(`• ${insight}`);
+  });
+  lines.push('');
+
+  lines.push('INDIVIDUAL DEVELOPER ANALYSIS:');
+  lines.push('--------------------------------------------------------------------------------');
+  lines.push('Score | Developer      | Tech | Comm | Collab | Delivery | Strengths & Suggestions');
+  lines.push('--------------------------------------------------------------------------------');
+
+  for (const analysis of report.developerAnalyses) {
+    const scoreStr = analysis.overallScore.toFixed(1).padStart(5);
+    const developerStr = analysis.developer.padEnd(14).slice(0, 14);
+    const techStr = analysis.technicalQuality.toString().padStart(4);
+    const commStr = analysis.communication.toString().padStart(4);
+    const collabStr = analysis.collaboration.toString().padStart(6);
+    const deliveryStr = analysis.delivery.toString().padStart(8);
+
+    lines.push(`${scoreStr} | ${developerStr} | ${techStr} | ${commStr} | ${collabStr} | ${deliveryStr} |`);
+    
+    // Add examples and suggestions
+    if (analysis.examples.length > 0) {
+      lines.push(`      Examples: ${analysis.examples[0]}`);
+    }
+    if (analysis.suggestions.length > 0) {
+      lines.push(`      Suggestion: ${analysis.suggestions[0]}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function formatGitHubAsCSV(report: any): string {
+  const lines: string[] = [];
+  lines.push('Developer,Overall Score,Technical Quality,Communication,Collaboration,Delivery,Top Example,Top Suggestion');
+
+  for (const analysis of report.developerAnalyses) {
+    const line = [
+      analysis.developer,
+      analysis.overallScore.toString(),
+      analysis.technicalQuality.toString(),
+      analysis.communication.toString(),
+      analysis.collaboration.toString(),
+      analysis.delivery.toString(),
+      `"${analysis.examples[0] || 'None'}"`,
+      `"${analysis.suggestions[0] || 'None'}"`,
     ].join(',');
     lines.push(line);
   }
