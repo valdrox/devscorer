@@ -8,6 +8,7 @@ import {
   DeveloperScore,
   DeveloperDiscovery,
   DiscoveryFilters,
+  ParallelOptions,
 } from '../types/developer-types.js';
 import { GitHubReport } from '../types/index.js';
 
@@ -22,7 +23,7 @@ export class DeveloperAnalyzer {
     this.gitScorer = new GitContributionScorer();
   }
 
-  async analyzeDeveloper(scope: DeveloperScope, filters?: DiscoveryFilters): Promise<DeveloperAnalysis> {
+  async analyzeDeveloper(scope: DeveloperScope, filters?: DiscoveryFilters, parallelOptions?: ParallelOptions): Promise<DeveloperAnalysis> {
     const startTime = Date.now();
     
     logger.info(`🚀 Starting comprehensive analysis for developer: ${scope.username}`);
@@ -34,8 +35,9 @@ export class DeveloperAnalyzer {
     // Phase 2: Technical Analysis (Code Contributions)
     let technicalAnalysis: any = null;
     if (discovery.totalCommits > 0 && discovery.repositories.length > 0) {
-      logger.info(`🔬 Phase 2: Analyzing technical contributions...`);
-      technicalAnalysis = await this.performTechnicalAnalysis(discovery, scope);
+      const mode = parallelOptions?.parallel ? `parallel (${parallelOptions.concurrency} concurrent)` : 'sequential';
+      logger.info(`🔬 Phase 2: Analyzing technical contributions (${mode})...`);
+      technicalAnalysis = await this.performTechnicalAnalysis(discovery, scope, parallelOptions);
     } else {
       logger.info('⏭️ Skipping technical analysis - no code contributions found');
     }
@@ -73,9 +75,9 @@ export class DeveloperAnalyzer {
     return analysis;
   }
 
-  private async performTechnicalAnalysis(discovery: DeveloperDiscovery, scope: DeveloperScope): Promise<any> {
+  private async performTechnicalAnalysis(discovery: DeveloperDiscovery, scope: DeveloperScope, parallelOptions?: ParallelOptions): Promise<any> {
     // Find repositories with significant commit activity
-    const codeRepos = discovery.repositories.filter(repo => repo.commits >= 2);
+    const codeRepos = discovery.repositories.filter(repo => repo.commits >= 1);
     
     if (codeRepos.length === 0) {
       logger.info('No repositories with significant commit activity found');
@@ -84,31 +86,68 @@ export class DeveloperAnalyzer {
 
     logger.info(`Analyzing code contributions in ${codeRepos.length} repositories`);
 
-    const results = [];
-    
     // For now, we'll analyze the top repositories by commit count
     // In the future, we could analyze all repositories or use a different strategy
     const topRepos = codeRepos
       .sort((a, b) => b.commits - a.commits)
       .slice(0, 3); // Limit to top 3 repos to keep analysis reasonable
 
-    for (const repo of topRepos) {
-      try {
-        logger.info(`Analyzing code contributions in ${repo.fullName}...`);
-        
-        // Use the existing git analyzer for this repository
-        const repoUrl = `https://github.com/${repo.fullName}`;
-        const report = await this.gitScorer.analyzeContributions(repoUrl, scope.days, 20); // Limit to 20 commits
-        
-        results.push({
-          repository: repo.fullName,
-          report,
-          commits: repo.commits,
-        });
-        
-        logger.info(`✅ Completed technical analysis for ${repo.fullName}`);
-      } catch (error) {
-        logger.warn(`Failed to analyze ${repo.fullName}: ${error}`);
+    const results = [];
+
+    if (parallelOptions?.parallel && (parallelOptions.concurrency || 5) > 1) {
+      // Parallel repository analysis
+      logger.info(`🚀 Running parallel analysis with ${parallelOptions.concurrency || 5} concurrent operations`);
+      
+      const analyzeRepo = async (repo: any) => {
+        try {
+          logger.info(`🔍 Starting parallel analysis of ${repo.fullName}...`);
+          
+          const repoUrl = `https://github.com/${repo.fullName}`;
+          const report = await this.gitScorer.analyzeContributions(repoUrl, scope.days, 20, parallelOptions);
+          
+          logger.info(`✅ Completed technical analysis for ${repo.fullName}`);
+          return {
+            repository: repo.fullName,
+            report,
+            commits: repo.commits,
+          };
+        } catch (error) {
+          logger.warn(`❌ Failed to analyze ${repo.fullName}: ${error}`);
+          return null;
+        }
+      };
+
+      // Process repositories in parallel batches
+      const concurrency = Math.min(parallelOptions.concurrency || 5, topRepos.length);
+      const analysisPromises = topRepos.map(repo => analyzeRepo(repo));
+      
+      const parallelResults = await Promise.allSettled(analysisPromises);
+      
+      for (const result of parallelResults) {
+        if (result.status === 'fulfilled' && result.value) {
+          results.push(result.value);
+        }
+      }
+    } else {
+      // Sequential repository analysis (default)
+      for (const repo of topRepos) {
+        try {
+          logger.info(`Analyzing code contributions in ${repo.fullName}...`);
+          
+          // Use the existing git analyzer for this repository
+          const repoUrl = `https://github.com/${repo.fullName}`;
+          const report = await this.gitScorer.analyzeContributions(repoUrl, scope.days, 20, parallelOptions);
+          
+          results.push({
+            repository: repo.fullName,
+            report,
+            commits: repo.commits,
+          });
+          
+          logger.info(`✅ Completed technical analysis for ${repo.fullName}`);
+        } catch (error) {
+          logger.warn(`Failed to analyze ${repo.fullName}: ${error}`);
+        }
       }
     }
 

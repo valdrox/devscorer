@@ -82,6 +82,12 @@ devscorer evaluate <github-username> --repos "microsoft/vscode,microsoft/typescr
 
 # Enable debug logging to troubleshoot issues
 devscorer evaluate <github-username> --days 7 --debug
+
+# Enable parallel analysis for faster performance (default: 5 concurrent operations)
+devscorer evaluate <github-username> --parallel
+
+# Customize concurrency level
+devscorer evaluate <github-username> --parallel --concurrency 10
 ```
 
 ### Repository Analysis
@@ -95,6 +101,9 @@ devscorer review https://github.com/yourcompany/yourrepo --days 30
 
 # Analyze specific commit with debug output
 devscorer review https://github.com/yourcompany/yourrepo --commit abc123def --debug
+
+# Enable parallel analysis for faster performance
+devscorer review https://github.com/yourcompany/yourrepo --parallel --concurrency 5
 ```
 
 ### Output Formats
@@ -218,6 +227,8 @@ Common Options:
   -d, --days <number>     Number of days to analyze (default: 30 for evaluate, 7 for review)
   -o, --output <file>     Output file for results (JSON format)
   --format <type>         Output format: table|json|csv (default: table)
+  --parallel              Enable parallel analysis for faster performance
+  --concurrency <number>  Number of parallel operations to run (default: 5)
   --verbose               Enable verbose logging
   --debug                 Enable debug logging
 
@@ -225,7 +236,7 @@ Evaluate Options:
   --org <organization>    Limit analysis to specific organization
   --repos <repositories>  Limit analysis to specific repositories (comma-separated)
   --org-repos <org>       Analyze only repos owned by this organization
-  --min-activity <number> Minimum activities required to include a repository
+  --min-activity <number> Minimum activities required to include a repository (default: 1)
 
 Review Options:
   -l, --limit <number>    Maximum commits to analyze (for testing)

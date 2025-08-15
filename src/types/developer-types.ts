@@ -88,3 +88,8 @@ export interface ConfirmationPrompt {
   estimatedDuration: number;
   message: string;
 }
+
+export interface ParallelOptions {
+  parallel?: boolean;
+  concurrency?: number;
+}

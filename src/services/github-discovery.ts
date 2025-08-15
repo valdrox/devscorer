@@ -86,30 +86,28 @@ export class GitHubDiscoveryService {
       let processedRepos = 0;
       let filteredOutRepos = 0;
       
-      for (const repoFullName of repoSet) {
+      // Process repositories in parallel for faster discovery
+      const getRepoActivity = async (repoFullName: string) => {
         try {
           const [owner, name] = repoFullName.split('/');
-          if (!owner || !name) continue;
+          if (!owner || !name) return null;
 
           logger.debug(`\n🔍 Analyzing repository: ${repoFullName}`);
           
           // Apply filters
           if (filters?.organizations?.length && !filters.organizations.includes(owner)) {
             logger.debug(`❌ Filtered out ${repoFullName}: organization "${owner}" not in allowed list`);
-            filteredOutRepos++;
-            continue;
+            return { filtered: true, reason: 'organization' };
           }
 
           if (filters?.repositories?.length && !filters.repositories.includes(repoFullName)) {
             logger.debug(`❌ Filtered out ${repoFullName}: repository not in allowed list`);
-            filteredOutRepos++;
-            continue;
+            return { filtered: true, reason: 'repository' };
           }
 
           if (filters?.orgRepositories && owner !== filters.orgRepositories) {
             logger.debug(`❌ Filtered out ${repoFullName}: owner "${owner}" doesn't match required org "${filters.orgRepositories}"`);
-            filteredOutRepos++;
-            continue;
+            return { filtered: true, reason: 'orgRepositories' };
           }
 
           const repoActivity = await this.getRepositoryActivity(owner, name, scope.username, since);
@@ -129,22 +127,41 @@ export class GitHubDiscoveryService {
           
           if (filters?.minActivity && totalActivity < filters.minActivity) {
             logger.debug(`❌ Filtered out ${repoFullName}: total activity ${totalActivity} < minimum ${filters.minActivity}`);
-            filteredOutRepos++;
-            continue;
+            return { filtered: true, reason: 'minActivity' };
           }
 
           logger.debug(`✅ Repository ${repoFullName} included: ${totalActivity} activities`);
-          repositories.push(repoActivity);
-          organizations.add(owner);
-          processedRepos++;
-
-          totalCommits += repoActivity.commits;
-          totalIssues += repoActivity.issues;
-          totalPullRequests += repoActivity.pullRequests;
-          totalReviews += repoActivity.reviews;
-          totalComments += repoActivity.comments;
+          return { 
+            filtered: false, 
+            repoActivity, 
+            owner, 
+            totalActivity 
+          };
         } catch (error) {
           logger.debug(`❌ Failed to analyze repository ${repoFullName}: ${error}`);
+          return null;
+        }
+      };
+
+      // Process all repositories in parallel
+      const repoPromises = Array.from(repoSet).map(repoFullName => getRepoActivity(repoFullName));
+      const repoResults = await Promise.allSettled(repoPromises);
+
+      for (const result of repoResults) {
+        if (result.status === 'fulfilled' && result.value) {
+          if (result.value.filtered) {
+            filteredOutRepos++;
+          } else if (result.value.repoActivity) {
+            repositories.push(result.value.repoActivity);
+            organizations.add(result.value.owner);
+            processedRepos++;
+
+            totalCommits += result.value.repoActivity.commits;
+            totalIssues += result.value.repoActivity.issues;
+            totalPullRequests += result.value.repoActivity.pullRequests;
+            totalReviews += result.value.repoActivity.reviews;
+            totalComments += result.value.repoActivity.comments;
+          }
         }
       }
 

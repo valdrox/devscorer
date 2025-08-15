@@ -17,7 +17,9 @@ export class GitAnalyzer {
   async cloneRepository(repoUrl: string): Promise<string> {
     return ErrorHandler.wrapAsync(
       async () => {
-        const tempDir = tmp.dirSync({ prefix: 'devscorer-', unsafeCleanup: true });
+        // Generate unique prefix for parallel operations to prevent conflicts
+        const uniqueId = Math.random().toString(36).substring(2, 15);
+        const tempDir = tmp.dirSync({ prefix: `devscorer-${uniqueId}-`, unsafeCleanup: true });
         this.repoPath = tempDir.name;
 
         logger.info('Cloning repository', { repository: repoUrl, destination: this.repoPath });
@@ -454,7 +456,9 @@ export class GitAnalyzer {
       throw new Error('Repository not cloned. Call cloneRepository first.');
     }
 
-    const tempDir = tmp.dirSync({ prefix: 'precommit-', unsafeCleanup: true });
+    // Generate unique prefix for parallel operations to prevent conflicts
+    const uniqueId = Math.random().toString(36).substring(2, 15);
+    const tempDir = tmp.dirSync({ prefix: `precommit-${uniqueId}-`, unsafeCleanup: true });
     const preCommitPath = tempDir.name;
 
     logger.debug(`Creating pre-commit repository at ${preCommitPath} for commit ${commitHash}`);

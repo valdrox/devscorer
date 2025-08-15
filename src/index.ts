@@ -35,7 +35,7 @@ class GitContributionScorer {
     this.scoringEngine = new ScoringEngine();
   }
 
-  async analyzeContributions(repoUrl: string, days: number = 7, limit?: number): Promise<AnalysisReport> {
+  async analyzeContributions(repoUrl: string, days: number = 7, limit?: number, parallelOptions?: any): Promise<AnalysisReport> {
     const limitText = limit ? ` (max ${limit} commits)` : '';
     logger.info(`Starting analysis of ${repoUrl} for the last ${days} days${limitText}`);
 
@@ -69,18 +69,62 @@ class GitContributionScorer {
       }
 
       const developerScores: ContributionScore[] = [];
-      let processed = 0;
 
-      for (const contribution of contributionsToAnalyze) {
-        try {
-          logger.info(`Analyzing contribution ${++processed}/${contributionsToAnalyze.length}: ${contribution.branch}`);
-          logger.info(`🔍 Exploring ${contribution.branch} by ${contribution.author}`);
-          const score = await this.analyzeContribution(contribution);
-          if (score) {
-            developerScores.push(score);
+      if (parallelOptions?.parallel && parallelOptions.concurrency > 1) {
+        // Parallel contribution analysis
+        logger.info(`🚀 Running parallel contribution analysis with ${parallelOptions.concurrency} concurrent operations`);
+        
+        const analyzeContribution = async (contribution: any, index: number) => {
+          try {
+            logger.info(`🔍 Starting parallel analysis ${index + 1}/${contributionsToAnalyze.length}: ${contribution.branch} by ${contribution.author}`);
+            const score = await this.analyzeContribution(contribution);
+            if (score) {
+              logger.info(`✅ Completed analysis of ${contribution.branch}`);
+              return score;
+            }
+            return null;
+          } catch (error) {
+            logger.error(`❌ Failed to analyze contribution ${contribution.branch}: ${error}`);
+            return null;
           }
-        } catch (error) {
-          logger.error(`Failed to analyze contribution ${contribution.branch}: ${error}`);
+        };
+
+        // Process contributions in controlled batches to prevent resource conflicts
+        const concurrency = Math.min(parallelOptions.concurrency || 5, contributionsToAnalyze.length);
+        const batches: any[][] = [];
+        
+        for (let i = 0; i < contributionsToAnalyze.length; i += concurrency) {
+          batches.push(contributionsToAnalyze.slice(i, i + concurrency));
+        }
+        
+        for (const batch of batches) {
+          const batchPromises = batch.map((contribution, batchIndex) => {
+            const globalIndex = batches.indexOf(batch) * concurrency + batchIndex;
+            return analyzeContribution(contribution, globalIndex);
+          });
+          
+          const batchResults = await Promise.allSettled(batchPromises);
+          
+          for (const result of batchResults) {
+            if (result.status === 'fulfilled' && result.value) {
+              developerScores.push(result.value);
+            }
+          }
+        }
+      } else {
+        // Sequential contribution analysis (default)
+        let processed = 0;
+        for (const contribution of contributionsToAnalyze) {
+          try {
+            logger.info(`Analyzing contribution ${++processed}/${contributionsToAnalyze.length}: ${contribution.branch}`);
+            logger.info(`🔍 Exploring ${contribution.branch} by ${contribution.author}`);
+            const score = await this.analyzeContribution(contribution);
+            if (score) {
+              developerScores.push(score);
+            }
+          } catch (error) {
+            logger.error(`Failed to analyze contribution ${contribution.branch}: ${error}`);
+          }
         }
       }
 
@@ -401,9 +445,11 @@ async function main() {
     .option('--org <organization>', 'Limit analysis to specific organization')
     .option('--repos <repositories>', 'Limit analysis to specific repositories (comma-separated)')
     .option('--org-repos <organization>', 'Analyze only repos owned by this organization')
-    .option('--min-activity <number>', 'Minimum activities required to include a repository', '2')
+    .option('--min-activity <number>', 'Minimum activities required to include a repository', '1')
     .option('-o, --output <file>', 'Output file for results (JSON format)')
     .option('--format <type>', 'Output format (table|json)', 'table')
+    .option('--parallel', 'Enable parallel analysis for faster performance')
+    .option('--concurrency <number>', 'Number of parallel operations to run', '5')
     .option('--verbose', 'Enable verbose logging')
     .option('--debug', 'Enable debug logging')
     .action(async (username: string, options: any) => {
@@ -435,7 +481,7 @@ async function main() {
         };
 
         const filters: DiscoveryFilters = {
-          minActivity: options.minActivity ? parseInt(options.minActivity, 10) : 2,
+          minActivity: options.minActivity ? parseInt(options.minActivity, 10) : 1,
         };
 
         if (options.org) {
@@ -483,10 +529,25 @@ async function main() {
 
         // Step 2: Full analysis
         console.log(chalk.blue('🚀 Developer Analysis - Processing Phase'));
-        console.log(chalk.gray(`Analyzing ${username} with comprehensive evaluation...\n`));
+        const parallelMode = options.parallel ? `(parallel mode: ${options.concurrency} concurrent operations)` : '(sequential mode)';
+        console.log(chalk.gray(`Analyzing ${username} with comprehensive evaluation ${parallelMode}...\n`));
 
+        const concurrency = options.parallel ? parseInt(options.concurrency, 10) : 1;
+        
+        // Validate concurrency limits for resource management
+        if (concurrency > 10) {
+          console.log(chalk.yellow('⚠️ Warning: High concurrency (>10) may cause memory issues. Consider reducing --concurrency.'));
+        }
+        
+        if (options.parallel) {
+          logger.info(`🚀 Parallel mode enabled with ${concurrency} concurrent operations`);
+        }
+        
         const analyzer = new DeveloperAnalyzer();
-        const analysis = await analyzer.analyzeDeveloper(scope, filters);
+        const analysis = await analyzer.analyzeDeveloper(scope, filters, { 
+          parallel: options.parallel, 
+          concurrency 
+        });
 
         // Step 3: Display results
         if (options.output) {
@@ -522,6 +583,8 @@ async function main() {
     .option('-c, --commit <hash>', 'Analyze a specific commit by hash')
     .option('-o, --output <file>', 'Output file for results (JSON format)')
     .option('--format <type>', 'Output format (table|json|csv)', 'table')
+    .option('--parallel', 'Enable parallel analysis for faster performance')
+    .option('--concurrency <number>', 'Number of parallel operations to run', '5')
     .option('--verbose', 'Enable verbose logging')
     .option('--debug', 'Enable debug logging')
     .action(async (repoUrl: string, options: any) => {
@@ -559,6 +622,17 @@ async function main() {
           });
         }
 
+        const concurrency = options.parallel ? parseInt(options.concurrency, 10) : 1;
+        
+        // Validate concurrency limits for resource management
+        if (concurrency > 10) {
+          console.log(chalk.yellow('⚠️ Warning: High concurrency (>10) may cause memory issues. Consider reducing --concurrency.'));
+        }
+        
+        if (options.parallel) {
+          logger.info(`🚀 Parallel mode enabled with ${concurrency} concurrent operations`);
+        }
+        
         const scorer = new GitContributionScorer();
 
         if (options.commit) {
@@ -603,10 +677,14 @@ async function main() {
         } else {
           // Multi-commit analysis (existing behavior)
           const limitText = limit ? ` (max ${limit} commits)` : '';
+          const parallelMode = options.parallel ? ` (parallel mode: ${concurrency} concurrent)` : '';
           console.log(chalk.blue('🔍 Git Contribution Scorer'));
-          console.log(chalk.gray(`Analyzing ${repoUrl} for the last ${days} days${limitText}...\n`));
+          console.log(chalk.gray(`Analyzing ${repoUrl} for the last ${days} days${limitText}${parallelMode}...\n`));
 
-          const report = await scorer.analyzeContributions(repoUrl, days, limit);
+          const report = await scorer.analyzeContributions(repoUrl, days, limit, { 
+            parallel: options.parallel, 
+            concurrency 
+          });
 
           if (options.output) {
             await fs.writeJson(options.output, report, { spaces: 2 });
