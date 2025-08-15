@@ -47,27 +47,47 @@ export class GitAnalyzer {
 
     return ErrorHandler.wrapAsync(
       async () => {
-        const sinceDate = new Date();
-        sinceDate.setDate(sinceDate.getDate() - days);
-        const sinceDateStr = sinceDate.toISOString().split('T')[0];
+        // Use relative date syntax which is more reliable across timezones
+        const sinceDateStr = `${days} days ago`;
 
         logger.info('Analyzing contributions', { days, since: sinceDateStr });
 
         try {
           // Use raw git command for better date handling
           // Look for individual commits (non-merge commits are more common in modern workflows)
-          const logResult = await this.git.raw([
+          const gitLogCommand = [
             'log',
             `--since=${sinceDateStr}`,
             '--pretty=format:%H|%ai|%s|%an|%ae',
             '--no-merges', // Focus on individual commits rather than merge commits
-          ]);
+          ];
+          
+          logger.debug(`📋 Executing git command: git ${gitLogCommand.join(' ')}`);
+          const logResult = await this.git.raw(gitLogCommand);
 
           const contributions: GitContribution[] = [];
           const commitLines = logResult
             .trim()
             .split('\n')
             .filter(line => line.length > 0);
+
+          logger.info(`📊 Git log analysis results:`);
+          logger.info(`   - Command: git ${gitLogCommand.join(' ')}`);
+          logger.info(`   - Raw output length: ${logResult.length} chars`);
+          logger.info(`   - Total commit lines found: ${commitLines.length}`);
+          
+          if (commitLines.length === 0) {
+            logger.warn(`⚠️ No commits found with git log since ${sinceDateStr}`);
+            logger.debug(`Raw git log output: "${logResult}"`);
+          } else {
+            logger.debug(`📝 Sample commit lines (first 3):`);
+            commitLines.slice(0, 3).forEach((line, index) => {
+              logger.debug(`   ${index + 1}. ${line}`);
+            });
+          }
+
+          let significantCount = 0;
+          let insignificantCount = 0;
 
           for (const line of commitLines) {
             const [hash, date, message, authorName, authorEmail] = line.split('|');
@@ -79,15 +99,33 @@ export class GitAnalyzer {
               author_email: authorEmail,
             };
 
+            logger.debug(`\n🔍 Processing commit ${hash.substring(0, 8)}:`);
+            logger.debug(`   - Author: ${authorName} <${authorEmail}>`);
+            logger.debug(`   - Date: ${date}`);
+            logger.debug(`   - Message: "${message}"`);
+
             // Since we're looking at regular commits now, treat them as individual contributions
             // Skip very small commits (like version bumps)
             if (this.isSignificantCommit(commit.message)) {
+              significantCount++;
+              logger.debug(`✅ Processing as significant contribution`);
               const contribution = await this.analyzeRegularCommit(commit);
               if (contribution) {
                 contributions.push(contribution);
+                logger.debug(`✅ Contribution added to analysis list`);
+              } else {
+                logger.debug(`⚠️ Failed to analyze commit as contribution`);
               }
+            } else {
+              insignificantCount++;
             }
           }
+
+          logger.info(`📈 Commit analysis summary:`);
+          logger.info(`   - Total commits found: ${commitLines.length}`);
+          logger.info(`   - Significant commits: ${significantCount}`);
+          logger.info(`   - Insignificant commits (filtered): ${insignificantCount}`);
+          logger.info(`   - Contributions created: ${contributions.length}`);
 
           logger.info('Found significant commits', {
             count: contributions.length,
@@ -158,27 +196,38 @@ export class GitAnalyzer {
   }
 
   private isSignificantCommit(message: string): boolean {
+    logger.debug(`🔍 Evaluating commit significance: "${message}"`);
+    
     // Skip very small or automated commits
     const skipPatterns = [
-      /^version bump/i,
-      /^bump version/i,
-      /^release/i,
-      /^\d+\.\d+\.\d+$/,
-      /^update package\.json/i,
-      /^update changelog/i,
-      /^update readme/i,
-      /^fix typo/i,
-      /^formatting/i,
-      /^lint/i,
-      /^chore:/i,
+      { pattern: /^version bump/i, name: 'version bump' },
+      { pattern: /^bump version/i, name: 'bump version' },
+      { pattern: /^release/i, name: 'release' },
+      { pattern: /^\d+\.\d+\.\d+$/, name: 'version number only' },
+      { pattern: /^update package\.json/i, name: 'update package.json' },
+      { pattern: /^update changelog/i, name: 'update changelog' },
+      { pattern: /^update readme/i, name: 'update readme' },
+      { pattern: /^fix typo/i, name: 'fix typo' },
+      { pattern: /^formatting/i, name: 'formatting' },
+      { pattern: /^lint/i, name: 'lint' },
+      { pattern: /^chore:/i, name: 'chore prefix' },
     ];
 
-    if (skipPatterns.some(pattern => pattern.test(message))) {
-      return false;
+    for (const { pattern, name } of skipPatterns) {
+      if (pattern.test(message)) {
+        logger.debug(`❌ Commit filtered out: matches "${name}" pattern`);
+        return false;
+      }
     }
 
     // Must have reasonable length
-    return message.length > 10;
+    if (message.length <= 10) {
+      logger.debug(`❌ Commit filtered out: message too short (${message.length} chars, need >10)`);
+      return false;
+    }
+
+    logger.debug(`✅ Commit is significant`);
+    return true;
   }
 
   private async analyzeMergeCommit(commit: any): Promise<GitContribution | null> {

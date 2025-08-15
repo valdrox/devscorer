@@ -10,7 +10,10 @@ import { ClaudeRunner } from './core/claude-runner.js';
 import { CodeComparator } from './core/code-comparator.js';
 import { ScoringEngine } from './core/scoring-engine.js';
 import { GitHubIssuesAnalyzer } from './core/github-issues-analyzer.js';
+import { DeveloperAnalyzer } from './core/developer-analyzer.js';
+import { GitHubDiscoveryService } from './services/github-discovery.js';
 import { ContributionScore, AnalysisReport, GitContribution, Hint } from './types/index.js';
+import { DeveloperScope, DiscoveryFilters } from './types/developer-types.js';
 import { logger, setLogLevel } from './utils/logger.js';
 import { config, validateConfig } from './utils/config.js';
 import { tempManager } from './utils/temp-manager.js';
@@ -391,6 +394,127 @@ async function main() {
   program.name('devscorer').description('Dev performance evaluator').version('1.0.0');
 
   program
+    .command('evaluate')
+    .description('Comprehensive developer evaluation (combines code + social analysis)')
+    .argument('<username>', 'GitHub username to evaluate')
+    .option('-d, --days <number>', 'Number of days to analyze', '30')
+    .option('--org <organization>', 'Limit analysis to specific organization')
+    .option('--repos <repositories>', 'Limit analysis to specific repositories (comma-separated)')
+    .option('--org-repos <organization>', 'Analyze only repos owned by this organization')
+    .option('--min-activity <number>', 'Minimum activities required to include a repository', '2')
+    .option('-o, --output <file>', 'Output file for results (JSON format)')
+    .option('--format <type>', 'Output format (table|json)', 'table')
+    .option('--verbose', 'Enable verbose logging')
+    .option('--debug', 'Enable debug logging')
+    .action(async (username: string, options: any) => {
+      try {
+        if (options.debug) {
+          setLogLevel('debug');
+          logger.debug('🔧 Debug logging enabled - you should see detailed LLM prompts and responses');
+        } else if (options.verbose) {
+          setLogLevel('info');
+        }
+
+        await validateConfig();
+        logger.info('Configuration validated successfully');
+
+        const days = parseInt(options.days, 10);
+        if (isNaN(days) || days < 1 || days > 365) {
+          throw new Error('Days must be a number between 1 and 365');
+        }
+
+        // Validate username format
+        if (!username.match(/^[a-zA-Z0-9-]+$/)) {
+          throw new Error('Invalid GitHub username format');
+        }
+
+        // Build scope and filters
+        const scope: DeveloperScope = {
+          username,
+          days,
+        };
+
+        const filters: DiscoveryFilters = {
+          minActivity: options.minActivity ? parseInt(options.minActivity, 10) : 2,
+        };
+
+        if (options.org) {
+          filters.organizations = [options.org];
+        }
+
+        if (options.repos) {
+          filters.repositories = options.repos.split(',').map((r: string) => r.trim());
+        }
+
+        if (options.orgRepos) {
+          filters.orgRepositories = options.orgRepos;
+        }
+
+        // Step 1: Discovery phase (if unscoped)
+        const isUnscoped = !options.org && !options.repos && !options.orgRepos;
+        
+        if (isUnscoped) {
+          console.log(chalk.blue('🔍 Developer Analysis - Discovery Phase'));
+          console.log(chalk.gray(`Discovering activity for ${username}...\n`));
+
+          const discoveryService = new GitHubDiscoveryService();
+          const discovery = await discoveryService.discoverUserActivity(scope, filters);
+          const confirmationPrompt = discoveryService.generateConfirmationPrompt(discovery);
+
+          console.log(confirmationPrompt.message);
+          console.log('');
+
+          // Ask for confirmation
+          const { confirm } = await import('@inquirer/prompts');
+          const shouldProceed = await confirm({
+            message: 'Proceed with analysis?',
+            default: false,
+          });
+
+          if (!shouldProceed) {
+            console.log(chalk.yellow('Analysis cancelled by user.'));
+            console.log('');
+            console.log(chalk.gray('💡 Tip: Use --org, --repos, or --org-repos to scope your analysis:'));
+            console.log(chalk.gray('  devscorer evaluate ' + username + ' --org microsoft'));
+            console.log(chalk.gray('  devscorer evaluate ' + username + ' --repos microsoft/vscode,microsoft/typescript'));
+            return;
+          }
+        }
+
+        // Step 2: Full analysis
+        console.log(chalk.blue('🚀 Developer Analysis - Processing Phase'));
+        console.log(chalk.gray(`Analyzing ${username} with comprehensive evaluation...\n`));
+
+        const analyzer = new DeveloperAnalyzer();
+        const analysis = await analyzer.analyzeDeveloper(scope, filters);
+
+        // Step 3: Display results
+        if (options.output) {
+          await fs.writeJson(options.output, analysis, { spaces: 2 });
+          console.log(chalk.green(`\n✅ Results saved to ${options.output}`));
+        }
+
+        if (options.format === 'json') {
+          console.log(JSON.stringify(analysis, null, 2));
+        } else {
+          console.log(formatDeveloperAnalysis(analysis));
+        }
+
+        await tempManager.cleanupAll();
+      } catch (error) {
+        console.error(chalk.red(`❌ Error: ${error instanceof Error ? error.message : String(error)}`));
+
+        logger.error('Developer analysis failed', error as Error, {
+          username,
+          daysAnalyzed: options.days,
+        });
+
+        await tempManager.cleanupAll();
+        process.exit(1);
+      }
+    });
+
+  program
     .command('review')
     .description('Analyze git contributions complexity using AI')
     .argument('<repo-url>', 'GitHub repository URL')
@@ -769,6 +893,108 @@ function formatGitHubAsCSV(report: any): string {
       `"${analysis.suggestions[0] || 'None'}"`,
     ].join(',');
     lines.push(line);
+  }
+
+  return lines.join('\n');
+}
+
+function formatDeveloperAnalysis(analysis: any): string {
+  const lines: string[] = [];
+  
+  lines.push('================================================================================');
+  lines.push('COMPREHENSIVE DEVELOPER ANALYSIS REPORT');
+  lines.push('================================================================================');
+  lines.push(`Developer: ${analysis.username}`);
+  lines.push(`Analysis Date: ${analysis.analysisDate.toISOString().split('T')[0]}`);
+  lines.push(`Period: Last ${analysis.scope.days} days`);
+  lines.push(`Processing Time: ${Math.round(analysis.processingTime / 1000)}s`);
+  lines.push('');
+
+  // Discovery Summary
+  lines.push('📊 ACTIVITY DISCOVERY');
+  lines.push('----------------------------------------');
+  lines.push(`Repositories: ${analysis.discovery.totalRepositories}`);
+  lines.push(`Commits: ${analysis.discovery.totalCommits}`);
+  lines.push(`Issues: ${analysis.discovery.totalIssues}`);
+  lines.push(`Pull Requests: ${analysis.discovery.totalPullRequests}`);
+  lines.push(`Reviews: ${analysis.discovery.totalReviews}`);
+  lines.push(`Comments: ${analysis.discovery.totalComments}`);
+  lines.push(`Organizations: ${analysis.discovery.organizations.join(', ')}`);
+  lines.push('');
+
+  // Combined Score
+  lines.push('🎯 OVERALL DEVELOPER SCORE');
+  lines.push('----------------------------------------');
+  lines.push(`Combined Score: ${analysis.combinedScore.combined.score}/10 (${(analysis.combinedScore.combined.confidence * 100).toFixed(0)}% confidence)`);
+  lines.push(`Technical Weight: ${(analysis.combinedScore.combined.breakdown.technicalWeight * 100).toFixed(0)}%`);
+  lines.push(`Social Weight: ${(analysis.combinedScore.combined.breakdown.socialWeight * 100).toFixed(0)}%`);
+  lines.push('');
+
+  // Technical Analysis
+  if (analysis.technicalAnalysis) {
+    lines.push('🔬 TECHNICAL ANALYSIS (Code Contributions)');
+    lines.push('----------------------------------------');
+    lines.push(`Code Complexity: ${analysis.combinedScore.technical.codeComplexity.toFixed(1)}/10`);
+    lines.push(`Implementation Quality: ${analysis.combinedScore.technical.implementationQuality.toFixed(1)}/10`);
+    lines.push(`Problem Solving: ${analysis.combinedScore.technical.problemSolving.toFixed(1)}/10`);
+    lines.push(`Technical Score: ${analysis.combinedScore.technical.overall.toFixed(1)}/10`);
+    
+    if (analysis.technicalAnalysis.summary) {
+      lines.push(`Repositories Analyzed: ${analysis.technicalAnalysis.summary.repositoriesAnalyzed}`);
+      lines.push(`Total Contributions: ${analysis.technicalAnalysis.summary.totalContributions}`);
+      lines.push(`Average Score: ${analysis.technicalAnalysis.summary.averageScore}`);
+    }
+    lines.push('');
+  } else {
+    lines.push('🔬 TECHNICAL ANALYSIS');
+    lines.push('----------------------------------------');
+    lines.push('No significant code contributions found in the analyzed period.');
+    lines.push('');
+  }
+
+  // Social Analysis
+  if (analysis.socialAnalysis && analysis.socialAnalysis.developerAnalyses.length > 0) {
+    const social = analysis.socialAnalysis.developerAnalyses[0];
+    lines.push('🤝 SOCIAL ANALYSIS (GitHub Interactions)');
+    lines.push('----------------------------------------');
+    lines.push(`Communication: ${social.communication}/10`);
+    lines.push(`Collaboration: ${social.collaboration}/10`);
+    lines.push(`Technical Quality: ${social.technicalQuality}/10`);
+    lines.push(`Delivery: ${social.delivery}/10`);
+    lines.push(`Social Score: ${social.overallScore}/10`);
+    lines.push('');
+
+    if (social.examples.length > 0) {
+      lines.push('Examples:');
+      social.examples.slice(0, 3).forEach((example: string) => {
+        lines.push(`• ${example}`);
+      });
+      lines.push('');
+    }
+
+    if (social.suggestions.length > 0) {
+      lines.push('Suggestions:');
+      social.suggestions.slice(0, 3).forEach((suggestion: string) => {
+        lines.push(`• ${suggestion}`);
+      });
+      lines.push('');
+    }
+  } else {
+    lines.push('🤝 SOCIAL ANALYSIS');
+    lines.push('----------------------------------------');
+    lines.push('No significant social contributions found in the analyzed period.');
+    lines.push('');
+  }
+
+  // Top Repositories
+  if (analysis.discovery.repositories.length > 0) {
+    lines.push('📈 TOP ACTIVE REPOSITORIES');
+    lines.push('----------------------------------------');
+    analysis.discovery.repositories.slice(0, 5).forEach((repo: any, index: number) => {
+      const total = repo.commits + repo.issues + repo.pullRequests + repo.reviews + repo.comments;
+      lines.push(`${index + 1}. ${repo.fullName} (${total} activities)`);
+      lines.push(`   └─ Commits: ${repo.commits}, Issues: ${repo.issues}, PRs: ${repo.pullRequests}`);
+    });
   }
 
   return lines.join('\n');

@@ -13,14 +13,27 @@ This is not meant to be used in prod. It's running a copy of Claude Code locally
 # Install globally
 npm install -g devscorer
 
-# Authenticate with your Anthropic API key
+# Authenticate with your Anthropic API key and GitHub token
 devscorer login
 
-# Analyze a repository
-devscorer https://github.com/company/repo
+# Evaluate a developer's performance (recommended)
+devscorer evaluate <github-username> --days 30
+
+# Or analyze a specific repository
+devscorer review https://github.com/company/repo
 ```
 
 ## How It Works
+
+### Developer Evaluation Mode (Recommended)
+
+1. **Discovers Activity**: Uses GitHub API to find all repositories where the developer has been active
+2. **Analyzes Code Contributions**: Clones repositories and examines significant commits using AI analysis
+3. **Evaluates Social Contributions**: Analyzes GitHub issues, pull requests, reviews, and comments
+4. **Combines Scores**: Generates a comprehensive developer score combining technical and social contributions
+5. **Provides Insights**: Offers detailed breakdown of strengths, areas for improvement, and examples
+
+### Repository Analysis Mode
 
 1. **Analyzes Recent Code Changes**: Clones a repository and examines significant commits from the last N days
 2. **Extracts Business Requirements**: Uses AI to understand what each developer was trying to accomplish  
@@ -32,63 +45,69 @@ devscorer https://github.com/company/repo
 
 - **Node.js 18+**: Required for running the application
 - **Anthropic API Key**: Get yours from [console.anthropic.com](https://console.anthropic.com/)
+- **GitHub Token**: Required for developer evaluation mode. Create a personal access token at [github.com/settings/tokens](https://github.com/settings/tokens)
 
 ## Authentication
 
-DevScorer stores your API key securely in your system keychain:
+DevScorer stores your API keys securely in your system keychain:
 
 ```bash
-# Store API key securely (one-time setup)
+# Store both Anthropic API key and GitHub token securely (one-time setup)
 devscorer login
 
 # Check authentication status
 devscorer auth-status
 
-# Remove stored API key
+# Remove stored API keys
 devscorer logout
 ```
 
-For development/CI environments, you can also use the `ANTHROPIC_API_KEY` environment variable.
+For development/CI environments, you can also use environment variables:
+- `ANTHROPIC_API_KEY` for Anthropic API access
+- `GITHUB_TOKEN` for GitHub API access
 
 ## Usage
 
-### Basic Analysis
+### Developer Evaluation (Recommended)
+
+```bash
+# Evaluate a developer's performance across all their recent activity
+devscorer evaluate <github-username> --days 30
+
+# Evaluate with specific organization scope
+devscorer evaluate <github-username> --org microsoft --days 14
+
+# Evaluate specific repositories only
+devscorer evaluate <github-username> --repos "microsoft/vscode,microsoft/typescript"
+
+# Enable debug logging to troubleshoot issues
+devscorer evaluate <github-username> --days 7 --debug
+```
+
+### Repository Analysis
 
 ```bash
 # Analyze the last 7 days (default)
-devscorer https://github.com/yourcompany/yourrepo
+devscorer review https://github.com/yourcompany/yourrepo
 
 # Analyze the last 30 days
-devscorer https://github.com/yourcompany/yourrepo --days 30
-
-# Enable verbose logging
-devscorer https://github.com/yourcompany/yourrepo --verbose
-```
-
-### Single Commit Analysis
-
-```bash
-# Analyze a specific commit by hash
-devscorer https://github.com/yourcompany/yourrepo --commit abc123def
+devscorer review https://github.com/yourcompany/yourrepo --days 30
 
 # Analyze specific commit with debug output
-devscorer https://github.com/yourcompany/yourrepo --commit abc123def --debug
+devscorer review https://github.com/yourcompany/yourrepo --commit abc123def --debug
 ```
 
 ### Output Formats
 
 ```bash
 # Default table format (console output)
-devscorer https://github.com/yourcompany/yourrepo
+devscorer evaluate <username>
 
 # JSON format
-devscorer https://github.com/yourcompany/yourrepo --format json
-
-# CSV format
-devscorer https://github.com/yourcompany/yourrepo --format csv
+devscorer evaluate <username> --format json
 
 # Save to file
-devscorer https://github.com/yourcompany/yourrepo --output results.json
+devscorer evaluate <username> --output results.json --format json
 ```
 
 ### System Check
@@ -179,21 +198,42 @@ devscorer https://github.com/yourcompany/yourrepo --debug
 
 ## Command Reference
 
-```bash
-devscorer [options] <repo-url>
+### Main Commands
 
-Options:
-  -d, --days <number>     Number of days to analyze (default: 7)
-  -l, --limit <number>    Maximum commits to analyze (for testing)
-  -c, --commit <hash>     Analyze specific commit by hash
+```bash
+# Developer Evaluation (Comprehensive Analysis)
+devscorer evaluate <github-username> [options]
+
+# Repository Analysis (Code Contributions Only)
+devscorer review <repo-url> [options]
+
+# GitHub Social Analysis (Issues, PRs, Reviews)
+devscorer github-analysis <repo-url> [options]
+```
+
+### Options
+
+```bash
+Common Options:
+  -d, --days <number>     Number of days to analyze (default: 30 for evaluate, 7 for review)
   -o, --output <file>     Output file for results (JSON format)
   --format <type>         Output format: table|json|csv (default: table)
   --verbose               Enable verbose logging
   --debug                 Enable debug logging
 
-Commands:
-  login                   Store API key securely in system keychain
-  logout                  Remove stored API key from keychain  
+Evaluate Options:
+  --org <organization>    Limit analysis to specific organization
+  --repos <repositories>  Limit analysis to specific repositories (comma-separated)
+  --org-repos <org>       Analyze only repos owned by this organization
+  --min-activity <number> Minimum activities required to include a repository
+
+Review Options:
+  -l, --limit <number>    Maximum commits to analyze (for testing)
+  -c, --commit <hash>     Analyze specific commit by hash
+
+Utility Commands:
+  login                   Store API keys securely in system keychain
+  logout                  Remove stored API keys from keychain  
   auth-status            Show authentication status
   check                  Verify configuration and dependencies
 ```
