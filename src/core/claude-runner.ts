@@ -1,9 +1,10 @@
-import { query, type SDKMessage } from '@anthropic-ai/claude-code';
+import { Options, query, type SDKMessage } from '@anthropic-ai/claude-code';
 import fs from 'fs-extra';
 import path from 'path';
 import simpleGit from 'simple-git';
 import { BusinessPurpose, ClaudeCodeResult, Hint } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import { claudeCodeLogger } from '../utils/claude-code-logger.js';
 
 export class ClaudeRunner {
   private workingDir: string = '';
@@ -161,10 +162,10 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       }
       logger.debug(`Claude Code prompt: ${prompt}`);
 
-      const queryOptions: any = {
+      const queryOptions: Options = {
         maxTurns: 30, // Increased to allow more complex implementations
         cwd: workDir,
-        allowedTools: ['Write', 'Edit', 'Read'],
+        allowedTools: ['Write', 'Edit', 'Read']
       };
 
       // Add resume option if we're resuming a session
@@ -187,31 +188,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         }
 
         // Log detailed progress for debugging
-        if (message.type === 'assistant') {
-          const content = message.message.content;
-          if (Array.isArray(content) && content.length > 0) {
-            const textContent = content.find(c => c.type === 'text');
-            if (textContent && 'text' in textContent) {
-              logger.debug(`Claude Code: ${textContent.text}`);
-            }
-          }
-        } else if (message.type === 'user') {
-          const content = message.message.content;
-          if (Array.isArray(content) && content.length > 0) {
-            const textContent = content.find(c => c.type === 'text');
-            if (textContent && 'text' in textContent) {
-              logger.debug(`Claude Code User: ${textContent.text}`);
-            }
-          } else if (typeof content === 'string') {
-            logger.debug(`Claude Code User: ${content}`);
-          } else {
-            logger.debug('Claude Code: User input received (non-text content)');
-          }
-        } else if (message.type === 'result') {
-          logger.debug(`Claude Code completed with ${message.num_turns} turns, result: ${message.subtype}`);
-        } else if (message.type === 'system') {
-          logger.debug(`Claude Code: System message - ${message.subtype}`);
-        }
+        claudeCodeLogger.logMessage(message);
       }
 
       clearTimeout(timeoutId);
@@ -446,6 +423,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
 
     return files;
   }
+
 
   async cleanup(): Promise<void> {
     // Reset session ID for next analysis
