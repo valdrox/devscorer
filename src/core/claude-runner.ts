@@ -14,7 +14,7 @@ export class ClaudeRunner {
     projectContext: string,
     preCommitRepoPath: string,
     originalDiff: string,
-    previousHints: Hint[] = [],
+    previousHints: Hint[] = []
   ): Promise<ClaudeCodeResult> {
     logger.info('Running Claude Code with business requirements');
 
@@ -58,10 +58,10 @@ export class ClaudeRunner {
     businessPurpose: BusinessPurpose,
     projectContext: string,
     originalDiff: string,
-    previousHints: Hint[],
+    previousHints: Hint[]
   ): string {
     logger.debug(
-      `Building Claude Code prompt with ${businessPurpose.requirements.length} requirements and ${previousHints.length} hints`,
+      `Building Claude Code prompt with ${businessPurpose.requirements.length} requirements and ${previousHints.length} hints`
     );
 
     let prompt = `
@@ -122,7 +122,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
   private async executeClaudeCode(
     prompt: string,
     workDir: string,
-    isResumingSession: boolean = false,
+    isResumingSession: boolean = false
   ): Promise<{
     code: string;
     success: boolean;
@@ -153,7 +153,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         // Log the contents of the working directory to verify scope
         const dirContents = await fs.readdir(workDir);
         logger.debug(
-          `📁 Working directory contents: ${dirContents.slice(0, 10).join(', ')}${dirContents.length > 10 ? ` (and ${dirContents.length - 10} more)` : ''}`,
+          `📁 Working directory contents: ${dirContents.slice(0, 10).join(', ')}${dirContents.length > 10 ? ` (and ${dirContents.length - 10} more)` : ''}`
         );
       } catch (error) {
         logger.error(`❌ Working directory verification failed: ${error}`);
@@ -164,7 +164,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       const queryOptions: any = {
         maxTurns: 30, // Increased to allow more complex implementations
         cwd: workDir,
-        permissionMode: 'bypassPermissions',
+        allowedTools: ['Write', 'Edit', 'Read'],
       };
 
       // Add resume option if we're resuming a session
@@ -283,7 +283,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         const hasSource = dirContents.includes('source');
         const hasPackageJson = dirContents.includes('package.json');
         logger.debug(
-          `📁 Repository indicators - .git: ${hasGit}, source/: ${hasSource}, package.json: ${hasPackageJson}`,
+          `📁 Repository indicators - .git: ${hasGit}, source/: ${hasSource}, package.json: ${hasPackageJson}`
         );
       }
 
@@ -472,7 +472,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         abortController,
         options: {
           maxTurns: 1,
-          permissionMode: 'bypassPermissions',
+          allowedTools: ['Write', 'Edit', 'Read'],
         },
       })) {
         messages.push(message);
