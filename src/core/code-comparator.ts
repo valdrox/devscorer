@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { FunctionalityComparison, TechnicalComparison, Hint } from '../types/index.js';
-import { logger } from '../utils/logger.js';
+import { logger, logPrompt, PromptType } from '../utils/logger.js';
 import { config, getConfig } from '../utils/config.js';
 
 export class CodeComparator {
@@ -25,7 +25,7 @@ export class CodeComparator {
 
     try {
       const comparisonPrompt = this.buildComparisonPrompt(originalDiff, aiGeneratedDiff, requirements);
-      logger.debug(`📊 Comparison prompt: ${comparisonPrompt}`);
+      logPrompt(PromptType.CODE_COMPARISON, comparisonPrompt);
 
       const anthropic = await this.getAnthropic();
       const response = await anthropic.messages.create({
@@ -68,7 +68,7 @@ export class CodeComparator {
 
     try {
       const comparisonPrompt = this.buildTechnicalComparisonPrompt(humanDiff, aiDiff, requirements);
-      logger.debug(`📊 Technical comparison prompt: ${comparisonPrompt}`);
+      logPrompt(PromptType.CODE_COMPARISON, comparisonPrompt);
 
       const anthropic = await this.getAnthropic();
       const response = await anthropic.messages.create({

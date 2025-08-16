@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BusinessPurpose, GitContribution } from '../types/index.js';
-import { logger } from '../utils/logger.js';
+import { logger, logPrompt, PromptType } from '../utils/logger.js';
 import { config, getConfig } from '../utils/config.js';
 
 export class BusinessExtractor {
@@ -23,7 +23,7 @@ export class BusinessExtractor {
 
     try {
       const prompt = this.buildAnalysisPrompt(contribution);
-      logger.debug(`Business analysis prompt: ${prompt}`);
+      logPrompt(PromptType.BUSINESS_ANALYSIS, prompt);
 
       const anthropic = await this.getAnthropic();
       const response = await anthropic.messages.create({

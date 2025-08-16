@@ -1,6 +1,7 @@
 import winston from 'winston';
 import path from 'path';
 import fs from 'fs-extra';
+import chalk from 'chalk';
 
 interface LogContext {
   operation?: string;
@@ -204,6 +205,36 @@ export function setLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): void {
 
 export function createChildLogger(metadata: LogContext): StructuredLogger {
   return logger.createChildLogger(metadata);
+}
+
+// Prompt logging system
+export enum PromptType {
+  BUSINESS_ANALYSIS = 'Business Analysis',
+  CODE_COMPARISON = 'Code Comparison',
+  GITHUB_EVALUATION = 'GitHub Evaluation',
+  CLAUDE_CODE_INITIAL = 'Claude Code Initial'
+}
+
+interface PromptStyle {
+  color: chalk.ChalkFunction;
+  emoji: string;
+}
+
+const PROMPT_STYLES: Record<PromptType, PromptStyle> = {
+  [PromptType.BUSINESS_ANALYSIS]: { color: chalk.green, emoji: '🟢' },
+  [PromptType.CODE_COMPARISON]: { color: chalk.blue, emoji: '🔵' },
+  [PromptType.GITHUB_EVALUATION]: { color: chalk.magenta, emoji: '🟣' },
+  [PromptType.CLAUDE_CODE_INITIAL]: { color: chalk.yellow, emoji: '🟡' }
+};
+
+export function logPrompt(promptType: PromptType, prompt: string): void {
+  const style = PROMPT_STYLES[promptType];
+  const startMarker = style.color(`${style.emoji} PROMPT: ${promptType}`);
+  const endMarker = style.color(`${style.emoji} END: ${promptType}`);
+  
+  logger.debug(startMarker);
+  logger.debug(prompt);
+  logger.debug(endMarker);
 }
 
 // Export types for use in other modules

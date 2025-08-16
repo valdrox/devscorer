@@ -8,7 +8,7 @@ import {
   GitHubReview, 
   GitHubComment 
 } from '../types/index.js';
-import { logger } from '../utils/logger.js';
+import { logger, logPrompt, PromptType } from '../utils/logger.js';
 import { ClaudeRunner } from './claude-runner.js';
 import { authManager } from '../auth/auth-manager.js';
 
@@ -413,11 +413,7 @@ export class GitHubIssuesAnalyzer {
     const prompt = this.buildEvaluationPrompt(activity);
     
     // Log full prompt for debugging (only in debug mode)
-    logger.debug('='.repeat(80));
-    logger.debug(`FULL LLM PROMPT FOR: ${activity.developer}`);
-    logger.debug('='.repeat(80));
-    logger.debug(prompt);
-    logger.debug('='.repeat(80));
+    logPrompt(PromptType.GITHUB_EVALUATION, prompt);
     
     const startTime = Date.now();
     this.llmStats.totalCalls++;

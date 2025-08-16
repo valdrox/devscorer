@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import simpleGit from 'simple-git';
 import { BusinessPurpose, ClaudeCodeResult, Hint } from '../types/index.js';
-import { logger } from '../utils/logger.js';
+import { logger, logPrompt, PromptType } from '../utils/logger.js';
 import { claudeCodeLogger } from '../utils/claude-code-logger.js';
 
 export class ClaudeRunner {
@@ -160,7 +160,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         logger.error(`❌ Working directory verification failed: ${error}`);
         throw error;
       }
-      logger.debug(`Claude Code prompt: ${prompt}`);
+      logPrompt(PromptType.CLAUDE_CODE_INITIAL, prompt);
 
       const queryOptions: Options = {
         maxTurns: 30, // Increased to allow more complex implementations
