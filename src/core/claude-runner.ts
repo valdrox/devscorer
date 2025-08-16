@@ -91,7 +91,7 @@ WORKING DIRECTORY SCOPE:
 ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
     }
 
-    prompt += '\n\nSTART IMPLEMENTING NOW - but remember to verify directory first!';
+    prompt += '\n\nSTART IMPLEMENTING NOW';
 
     return prompt;
   }
