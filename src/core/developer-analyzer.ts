@@ -1,6 +1,6 @@
 import { logger } from '../utils/logger.js';
 import { GitHubIssuesAnalyzer } from './github-issues-analyzer.js';
-import { GitContributionScorer } from '../index.js';
+import { GitContributionScorer } from './contribution-analyzer.js';
 import { GitHubDiscoveryService } from '../services/github-discovery.js';
 import {
   DeveloperAnalysis,
