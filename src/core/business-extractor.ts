@@ -19,7 +19,6 @@ export class BusinessExtractor {
   async extractBusinessPurpose(contribution: GitContribution): Promise<BusinessPurpose> {
     logger.info(`Extracting business purpose for branch: ${contribution.branch}`);
     logger.debug(`Code changes: ${contribution.linesChanged} lines in ${contribution.commits.length} commits`);
-    logger.debug(`📝 Code diff:\n${contribution.diff}`);
 
     try {
       const prompt = this.buildAnalysisPrompt(contribution);
