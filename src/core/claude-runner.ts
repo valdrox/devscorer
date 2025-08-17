@@ -5,6 +5,7 @@ import simpleGit from 'simple-git';
 import { BusinessPurpose, ClaudeCodeResult, Hint } from '../types/index.js';
 import { logger, logPrompt, PromptType } from '../utils/logger.js';
 import { claudeCodeLogger } from '../utils/claude-code-logger.js';
+import { GitAnalyzer } from './git-analyzer.js';
 
 export class ClaudeRunner {
   private workingDir: string = '';
@@ -13,15 +14,27 @@ export class ClaudeRunner {
   async runClaudeCode(
     businessPurpose: BusinessPurpose,
     projectContext: string,
-    preCommitRepoPath: string,
+    commitHash: string,
     originalDiff: string,
-    previousHints: Hint[] = []
+    previousHints: Hint[] = [],
+    gitAnalyzer?: GitAnalyzer
   ): Promise<ClaudeCodeResult> {
     logger.info('Running Claude Code with business requirements');
 
     try {
-      // Use the pre-commit repository as the working directory
-      this.workingDir = preCommitRepoPath;
+      // Use the existing repository and checkout pre-commit state
+      if (!gitAnalyzer) {
+        throw new Error('GitAnalyzer is required for optimized Claude Code execution');
+      }
+
+      const repoPath = gitAnalyzer.getRepoPath();
+      if (!repoPath) {
+        throw new Error('Repository path not available from GitAnalyzer');
+      }
+
+      // Checkout to pre-commit state in existing repository
+      await this.checkoutPreCommitState(repoPath, commitHash);
+      this.workingDir = repoPath;
 
       let prompt: string;
       const isResumingSession = this.sessionId !== null && previousHints.length > 0;
@@ -37,7 +50,7 @@ export class ClaudeRunner {
         logger.debug('Starting new Claude Code session');
       }
 
-      const result = await this.executeClaudeCode(prompt, preCommitRepoPath, isResumingSession);
+      const result = await this.executeClaudeCode(prompt, repoPath, isResumingSession);
 
       return {
         code: result.code,
@@ -165,7 +178,23 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       const queryOptions: Options = {
         maxTurns: 30, // Increased to allow more complex implementations
         cwd: workDir,
-        allowedTools: ['Write', 'Edit', 'Read']
+        permissionMode: 'acceptEdits',
+        allowedTools: [
+          'Bash',
+          'Edit',
+          'Glob',
+          'Grep',
+          'LS',
+          'MultiEdit',
+          'NotebookEdit',
+          'NotebookRead',
+          'Read',
+          'Task',
+          'TodoWrite',
+          'WebFetch',
+          'WebSearch',
+          'Write',
+        ],
       };
 
       // Add resume option if we're resuming a session
@@ -246,184 +275,78 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       // Create a git instance for the working directory
       const git = simpleGit(workDir);
 
-      // First, let's debug the actual directory contents
-      logger.debug(`🔍 Investigating working directory: ${workDir}`);
+      // Verify this is a git repository
       const dirExists = await fs.pathExists(workDir);
-      logger.debug(`📁 Working directory exists: ${dirExists}`);
-
-      if (dirExists) {
-        const dirContents = await fs.readdir(workDir);
-        logger.debug(`📁 Directory contents: ${dirContents.join(', ')}`);
-
-        // Check if this looks like the right repository by looking for key files
-        const hasGit = dirContents.includes('.git');
-        const hasSource = dirContents.includes('source');
-        const hasPackageJson = dirContents.includes('package.json');
-        logger.debug(
-          `📁 Repository indicators - .git: ${hasGit}, source/: ${hasSource}, package.json: ${hasPackageJson}`
-        );
+      if (!dirExists) {
+        throw new Error(`Working directory does not exist: ${workDir}`);
       }
 
-      // Check git status for debugging
+      const hasGitDir = await fs.pathExists(path.join(workDir, '.git'));
+      if (!hasGitDir) {
+        throw new Error(`Working directory is not a git repository: ${workDir}`);
+      }
+
+      logger.debug(`🔍 Extracting diff from working directory: ${workDir}`);
+
+      // STEP 1: Check git status to understand current state
       const status = await git.status();
-      logger.debug('🔍 Git status in working directory:');
+      logger.debug('🔍 Git status before staging:');
       logger.debug(`  📄 Modified files: ${status.modified.length > 0 ? status.modified.join(', ') : 'none'}`);
       logger.debug(`  📄 Untracked files: ${status.not_added.length > 0 ? status.not_added.join(', ') : 'none'}`);
       logger.debug(`  📄 Staged files: ${status.staged.length > 0 ? status.staged.join(', ') : 'none'}`);
       logger.debug(`  📄 Deleted files: ${status.deleted.length > 0 ? status.deleted.join(', ') : 'none'}`);
 
-      // Get the diff of all changes made by Claude Code
-      const diff = await git.diff();
-      logger.debug(`📊 Raw git diff length: ${diff.length} characters`);
+      // STEP 2: Determine if there are any changes to process
+      const hasChanges =
+        status.modified.length > 0 ||
+        status.not_added.length > 0 ||
+        status.deleted.length > 0 ||
+        status.staged.length > 0;
 
-      if (!diff || diff.trim().length === 0) {
-        logger.warn('⚠️ No unstaged changes detected, trying alternative approaches...');
-
-        // Check for untracked files and add them
-        if (status.not_added.length > 0) {
-          logger.debug(`📄 Found ${status.not_added.length} untracked files: ${status.not_added.join(', ')}`);
-
-          // Add untracked files to see them in diff
-          await git.add('.');
-          const diffWithUntracked = await git.diff(['--cached']);
-          logger.debug(`📊 Cached git diff length: ${diffWithUntracked.length} characters`);
-
-          if (diffWithUntracked && diffWithUntracked.trim().length > 0) {
-            logger.debug('✅ Successfully captured diff including untracked files');
-            return diffWithUntracked;
-          }
-        }
-
-        // Also check if there are already staged changes
-        const stagedDiff = await git.diff(['--cached']);
-        logger.debug(`📊 Already staged diff length: ${stagedDiff.length} characters`);
-
-        if (stagedDiff && stagedDiff.trim().length > 0) {
-          logger.debug('✅ Found staged changes, using those');
-          return stagedDiff;
-        }
-
-        // If still no changes, try diff with HEAD to see all changes from the initial state
-        const diffFromHead = await git.diff(['HEAD']);
-        logger.debug(`📊 Diff from HEAD length: ${diffFromHead.length} characters`);
-
-        if (diffFromHead && diffFromHead.trim().length > 0) {
-          logger.debug('✅ Found changes from HEAD, using those');
-          return diffFromHead;
-        }
-
-        // As a last resort, try to manually check specific files that Claude mentioned
-        logger.warn('🔍 No git changes detected, attempting manual file comparison...');
-        const manualDiff = await this.generateManualDiff(workDir);
-        if (manualDiff) {
-          logger.debug('✅ Generated manual diff from file changes');
-          return manualDiff;
-        }
-
-        throw new Error('No changes generated by Claude Code (no diff output from any method)');
+      if (!hasChanges) {
+        throw new Error('No changes detected in working directory (no modified, untracked, staged, or deleted files)');
       }
 
-      logger.debug(`✅ Successfully extracted git diff with ${diff.split('\n').length} lines`);
-      return diff;
+      // STEP 3: Stage all changes explicitly for proper diff generation
+      logger.debug('📦 Staging all changes for diff generation...');
+
+      // Add all modified and untracked files
+      if (status.modified.length > 0 || status.not_added.length > 0) {
+        await git.add('.');
+        logger.debug(`✅ Added ${status.modified.length + status.not_added.length} files to staging area`);
+      }
+
+      // Handle deleted files by removing them from the index
+      if (status.deleted.length > 0) {
+        for (const deletedFile of status.deleted) {
+          await git.rm(deletedFile);
+        }
+        logger.debug(`✅ Removed ${status.deleted.length} deleted files from index`);
+      }
+
+      // STEP 4: Generate diff from staged changes against HEAD
+      logger.debug('📊 Generating git diff from staged changes...');
+      const stagedDiff = await git.diff(['--cached']);
+      logger.debug(`📊 Staged diff length: ${stagedDiff.length} characters`);
+
+      if (!stagedDiff || stagedDiff.trim().length === 0) {
+        // If no staged diff, check if we already had staged changes from before
+        const preExistingStagedDiff = await git.diff(['--cached', 'HEAD']);
+        if (preExistingStagedDiff && preExistingStagedDiff.trim().length > 0) {
+          logger.debug('✅ Using pre-existing staged changes');
+          return preExistingStagedDiff;
+        }
+
+        throw new Error('No staged changes found after adding files to staging area');
+      }
+
+      logger.debug(`✅ Successfully extracted staged git diff with ${stagedDiff.split('\n').length} lines`);
+      return stagedDiff;
     } catch (error) {
       logger.error(`Failed to extract git diff: ${error}`);
       throw new Error(`Failed to extract git diff: ${error}`);
     }
   }
-
-  private async generateManualDiff(workDir: string): Promise<string | null> {
-    try {
-      // This is a fallback to manually check common file locations that might have been modified
-      const git = simpleGit(workDir);
-
-      // Get the original state by checking what files exist
-      const allFiles = await this.getAllFilesRecursively(workDir);
-      logger.debug(`🔍 Found ${allFiles.length} files in working directory`);
-
-      // For each file, check if it differs from the git HEAD
-      const changedFiles: string[] = [];
-
-      for (const file of allFiles) {
-        try {
-          const relativePath = path.relative(workDir, file);
-          // Skip .git directory files
-          if (relativePath.startsWith('.git/')) continue;
-
-          // Check if this file exists in git and if it's different
-          const headContent = await git.show([`HEAD:${relativePath}`]).catch(() => null);
-          const currentContent = await fs.readFile(file, 'utf-8');
-
-          if (headContent !== null && headContent !== currentContent) {
-            changedFiles.push(relativePath);
-            logger.debug(`📄 Detected manual change in: ${relativePath}`);
-          } else if (headContent === null) {
-            // This is a new file
-            changedFiles.push(relativePath);
-            logger.debug(`📄 Detected new file: ${relativePath}`);
-          }
-        } catch (error) {
-          // Ignore individual file errors
-        }
-      }
-
-      if (changedFiles.length > 0) {
-        logger.debug(`📄 Manual detection found ${changedFiles.length} changed files: ${changedFiles.join(', ')}`);
-
-        // Generate a simple diff for these files
-        let manualDiff = '';
-        for (const file of changedFiles) {
-          try {
-            const currentContent = await fs.readFile(path.join(workDir, file), 'utf-8');
-            manualDiff += `diff --git a/${file} b/${file}\n`;
-            manualDiff += `--- a/${file}\n`;
-            manualDiff += `+++ b/${file}\n`;
-            manualDiff += `@@ -1,1 +1,${currentContent.split('\n').length} @@\n`;
-
-            // Add the content as additions (simplified diff)
-            const lines = currentContent.split('\n');
-            for (const line of lines) {
-              manualDiff += `+${line}\n`;
-            }
-            manualDiff += '\n';
-          } catch (error) {
-            logger.debug(`Error generating manual diff for ${file}: ${error}`);
-          }
-        }
-
-        return manualDiff;
-      }
-
-      return null;
-    } catch (error) {
-      logger.debug(`Manual diff generation failed: ${error}`);
-      return null;
-    }
-  }
-
-  private async getAllFilesRecursively(dir: string): Promise<string[]> {
-    const files: string[] = [];
-
-    if (!(await fs.pathExists(dir))) {
-      return files;
-    }
-
-    const items = await fs.readdir(dir);
-
-    for (const item of items) {
-      const fullPath = path.join(dir, item);
-      const stat = await fs.stat(fullPath);
-
-      if (stat.isDirectory() && item !== 'node_modules' && item !== '.git') {
-        const subFiles = await this.getAllFilesRecursively(fullPath);
-        files.push(...subFiles);
-      } else if (stat.isFile()) {
-        files.push(fullPath);
-      }
-    }
-
-    return files;
-  }
-
 
   async cleanup(): Promise<void> {
     // Reset session ID for next analysis
@@ -450,7 +373,23 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         abortController,
         options: {
           maxTurns: 1,
-          allowedTools: ['Write', 'Edit', 'Read'],
+          permissionMode: 'acceptEdits',
+          allowedTools: [
+            'Bash',
+            'Edit',
+            'Glob',
+            'Grep',
+            'LS',
+            'MultiEdit',
+            'NotebookEdit',
+            'NotebookRead',
+            'Read',
+            'Task',
+            'TodoWrite',
+            'WebFetch',
+            'WebSearch',
+            'Write',
+          ],
         },
       })) {
         messages.push(message);
@@ -505,6 +444,24 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
 
       logger.debug(`Claude Code SDK not available: ${error}`);
       return false;
+    }
+  }
+
+  private async checkoutPreCommitState(repoPath: string, commitHash: string): Promise<void> {
+    try {
+      const git = simpleGit(repoPath);
+
+      // Get the parent commit (the state before this commit)
+      const preCommitHash = await git.raw(['rev-parse', `${commitHash}~1`]);
+      const cleanPreCommitHash = preCommitHash.trim();
+
+      // Checkout to the pre-commit state
+      await git.checkout(cleanPreCommitHash);
+
+      logger.debug(`Checked out repository to pre-commit state: ${cleanPreCommitHash}`);
+    } catch (error) {
+      logger.error(`Failed to checkout pre-commit state: ${error}`);
+      throw new Error(`Failed to checkout pre-commit state: ${error}`);
     }
   }
 }
