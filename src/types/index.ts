@@ -31,12 +31,6 @@ export interface ClaudeCodeResult {
   warnings?: string[];
 }
 
-export interface FunctionalityComparison {
-  isEquivalent: boolean;
-  similarityScore: number;
-  gaps: string[];
-  differences: string[];
-}
 
 export interface TechnicalComparison {
   factorsThatMakeABetter: string[];
