@@ -226,7 +226,7 @@ devscorer github-analysis <repo-url> [options]
 Common Options:
   -d, --days <number>     Number of days to analyze (default: 30 for evaluate, 7 for review)
   -o, --output <file>     Output file for results (JSON format)
-  --format <type>         Output format: table|json|csv (default: table)
+  --format <type>         Output format: table|json (evaluate), table|json|csv (review/github) (default: table)
   --parallel              Enable parallel analysis for faster performance
   --concurrency <number>  Number of parallel operations to run (default: 5)
   --verbose               Enable verbose logging
