@@ -5,6 +5,7 @@ import simpleGit from 'simple-git';
 import { BusinessPurpose, ClaudeCodeResult, Hint } from '../types/index.js';
 import { logger, logPrompt, PromptType } from '../utils/logger.js';
 import { claudeCodeLogger } from '../utils/claude-code-logger.js';
+import { ClaudeCodeError } from '../utils/error-handler.js';
 import { GitAnalyzer } from './git-analyzer.js';
 
 export class ClaudeRunner {
@@ -24,12 +25,12 @@ export class ClaudeRunner {
     try {
       // Use the existing repository and checkout pre-commit state
       if (!gitAnalyzer) {
-        throw new Error('GitAnalyzer is required for optimized Claude Code execution');
+        throw new ClaudeCodeError('GitAnalyzer is required for optimized Claude Code execution');
       }
 
       const repoPath = gitAnalyzer.getRepoPath();
       if (!repoPath) {
-        throw new Error('Repository path not available from GitAnalyzer');
+        throw new ClaudeCodeError('Repository path not available from GitAnalyzer');
       }
 
       // Checkout to pre-commit state in existing repository
@@ -161,7 +162,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       try {
         const workDirExists = await fs.pathExists(workDir);
         if (!workDirExists) {
-          throw new Error(`Working directory does not exist: ${workDir}`);
+          throw new ClaudeCodeError(`Working directory does not exist: ${workDir}`);
         }
 
         // Log the contents of the working directory to verify scope
@@ -226,7 +227,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       const resultMessage = messages.find(m => m.type === 'result');
 
       if (!resultMessage || resultMessage.type !== 'result') {
-        throw new Error('No result message received from Claude Code');
+        throw new ClaudeCodeError('No result message received from Claude Code');
       }
 
       if (resultMessage.subtype === 'success') {
@@ -278,12 +279,12 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       // Verify this is a git repository
       const dirExists = await fs.pathExists(workDir);
       if (!dirExists) {
-        throw new Error(`Working directory does not exist: ${workDir}`);
+        throw new ClaudeCodeError(`Working directory does not exist: ${workDir}`);
       }
 
       const hasGitDir = await fs.pathExists(path.join(workDir, '.git'));
       if (!hasGitDir) {
-        throw new Error(`Working directory is not a git repository: ${workDir}`);
+        throw new ClaudeCodeError(`Working directory is not a git repository: ${workDir}`);
       }
 
       logger.debug(`🔍 Extracting diff from working directory: ${workDir}`);
@@ -304,7 +305,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         status.staged.length > 0;
 
       if (!hasChanges) {
-        throw new Error('No changes detected in working directory (no modified, untracked, staged, or deleted files)');
+        throw new ClaudeCodeError('No changes detected in working directory (no modified, untracked, staged, or deleted files)');
       }
 
       // STEP 3: Stage all changes explicitly for proper diff generation
@@ -337,14 +338,14 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
           return preExistingStagedDiff;
         }
 
-        throw new Error('No staged changes found after adding files to staging area');
+        throw new ClaudeCodeError('No staged changes found after adding files to staging area');
       }
 
       logger.debug(`✅ Successfully extracted staged git diff with ${stagedDiff.split('\n').length} lines`);
       return stagedDiff;
     } catch (error) {
       logger.error(`Failed to extract git diff: ${error}`);
-      throw new Error(`Failed to extract git diff: ${error}`);
+      throw new ClaudeCodeError(`Failed to extract git diff: ${error}`);
     }
   }
 
@@ -400,7 +401,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       // Extract text response from the last assistant message
       const assistantMessages = messages.filter(m => m.type === 'assistant');
       if (assistantMessages.length === 0) {
-        throw new Error('No response from LLM');
+        throw new ClaudeCodeError('No response from LLM');
       }
 
       const lastMessage = assistantMessages[assistantMessages.length - 1];
@@ -413,10 +414,10 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
         }
       }
 
-      throw new Error('No text content in LLM response');
+      throw new ClaudeCodeError('No text content in LLM response');
     } catch (error) {
       logger.error(`GitHub analysis LLM call failed: ${error}`);
-      throw new Error(`LLM analysis failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new ClaudeCodeError(`LLM analysis failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -461,7 +462,7 @@ ${previousHints.map((hint, idx) => `${idx + 1}. ${hint.content}`).join('\n')}`;
       logger.debug(`Checked out repository to pre-commit state: ${cleanPreCommitHash}`);
     } catch (error) {
       logger.error(`Failed to checkout pre-commit state: ${error}`);
-      throw new Error(`Failed to checkout pre-commit state: ${error}`);
+      throw new ClaudeCodeError(`Failed to checkout pre-commit state: ${error}`);
     }
   }
 }

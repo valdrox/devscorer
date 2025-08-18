@@ -10,6 +10,7 @@ import {
 } from '../types/index.js';
 import { logger, logPrompt, PromptType } from '../utils/logger.js';
 import { ClaudeRunner } from './claude-runner.js';
+import { ValidationError } from '../utils/error-handler.js';
 import { authManager } from '../auth/auth-manager.js';
 
 export class GitHubIssuesAnalyzer {
@@ -39,7 +40,7 @@ export class GitHubIssuesAnalyzer {
   }
 
   private async getDefaultBranch(owner: string, repo: string): Promise<string> {
-    if (!this.octokit) throw new Error('Octokit not initialized');
+    if (!this.octokit) throw new ValidationError('Octokit not initialized');
 
     try {
       const response = await this.octokit.rest.repos.get({
@@ -56,7 +57,7 @@ export class GitHubIssuesAnalyzer {
   private parseRepoUrl(repoUrl: string): { owner: string; repo: string } {
     const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
     if (!match) {
-      throw new Error('Invalid GitHub repository URL. Expected format: https://github.com/owner/repo');
+      throw new ValidationError('Invalid GitHub repository URL. Expected format: https://github.com/owner/repo');
     }
     return {
       owner: match[1],
@@ -162,7 +163,7 @@ export class GitHubIssuesAnalyzer {
   }
 
   private async getContributors(owner: string, repo: string, days: number): Promise<string[]> {
-    if (!this.octokit) throw new Error('Octokit not initialized');
+    if (!this.octokit) throw new ValidationError('Octokit not initialized');
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const contributors = new Set<string>();
@@ -218,7 +219,7 @@ export class GitHubIssuesAnalyzer {
     developer: string,
     days: number
   ): Promise<DeveloperActivity> {
-    if (!this.octokit) throw new Error('Octokit not initialized');
+    if (!this.octokit) throw new ValidationError('Octokit not initialized');
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 

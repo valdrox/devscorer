@@ -2,6 +2,7 @@ import keytar from 'keytar';
 import { password, confirm } from '@inquirer/prompts';
 import open from 'open';
 import { Octokit } from 'octokit';
+import { ConfigurationError } from '../utils/error-handler.js';
 import { logger } from '../utils/logger.js';
 
 const SERVICE_NAME = 'devscorer';
@@ -94,7 +95,7 @@ export class AuthManager {
         const validation = await this.validateAnthropicApiKey(apiKey);
         
         if (!validation.valid) {
-          throw new Error(`Invalid Anthropic API key: ${validation.error}`);
+          throw new ConfigurationError(`Invalid Anthropic API key: ${validation.error}`);
         }
 
         await keytar.setPassword(SERVICE_NAME, ACCOUNT_NAME, apiKey);
@@ -166,7 +167,7 @@ export class AuthManager {
           const validation = await this.validateGitHubToken(githubToken);
           
           if (!validation.valid) {
-            throw new Error(`Invalid GitHub token: ${validation.error}`);
+            throw new ConfigurationError(`Invalid GitHub token: ${validation.error}`);
           }
 
           await keytar.setPassword(SERVICE_NAME, GITHUB_ACCOUNT_NAME, githubToken);
@@ -186,7 +187,7 @@ export class AuthManager {
       }
 
       logger.error(`Login failed: ${error}`);
-      throw new Error(`Failed to store credentials: ${error instanceof Error ? error.message : String(error)}`);
+      throw new ConfigurationError(`Failed to store credentials: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -210,7 +211,7 @@ export class AuthManager {
       }
     } catch (error) {
       logger.error(`Logout failed: ${error}`);
-      throw new Error(`Failed to remove credentials: ${error instanceof Error ? error.message : String(error)}`);
+      throw new ConfigurationError(`Failed to remove credentials: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -234,7 +235,7 @@ export class AuthManager {
     }
 
     // Priority 3: Error with helpful message
-    throw new Error(
+    throw new ConfigurationError(
       'No API key found. Options:\n' +
       '  1. Run "devscorer login" to store key securely in keychain\n' +
       '  2. Set ANTHROPIC_API_KEY environment variable',
@@ -311,7 +312,7 @@ export class AuthManager {
       }
 
       logger.error(`GitHub login failed: ${error}`);
-      throw new Error(`Failed to store GitHub token: ${error instanceof Error ? error.message : String(error)}`);
+      throw new ConfigurationError(`Failed to store GitHub token: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -327,7 +328,7 @@ export class AuthManager {
       }
     } catch (error) {
       logger.error(`GitHub logout failed: ${error}`);
-      throw new Error(`Failed to remove GitHub token: ${error instanceof Error ? error.message : String(error)}`);
+      throw new ConfigurationError(`Failed to remove GitHub token: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -351,7 +352,7 @@ export class AuthManager {
     }
 
     // Priority 3: Error with helpful message
-    throw new Error(
+    throw new ConfigurationError(
       'No GitHub token found. Options:\n' +
       '  1. Run "devscorer login" to store token securely in keychain\n' +
       '  2. Set GITHUB_TOKEN environment variable\n' +

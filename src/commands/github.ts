@@ -4,6 +4,7 @@ import { GitHubIssuesAnalyzer } from '../core/github-issues-analyzer.js';
 import { logger, setLogLevel } from '../utils/logger.js';
 import { validateConfig } from '../utils/config.js';
 import { tempManager } from '../utils/temp-manager.js';
+import { ValidationError } from '../utils/error-handler.js';
 import { formatGitHubReport, formatGitHubAsCSV } from '../index.js';
 
 export async function githubAnalysisCommand(repoUrl: string, options: any): Promise<void> {
@@ -20,11 +21,11 @@ export async function githubAnalysisCommand(repoUrl: string, options: any): Prom
 
     const days = parseInt(options.days, 10);
     if (isNaN(days) || days < 1 || days > 365) {
-      throw new Error('Days must be a number between 1 and 365');
+      throw new ValidationError('Days must be a number between 1 and 365');
     }
 
     if (!repoUrl.match(/github\.com/)) {
-      throw new Error('Repository URL must be a valid GitHub repository URL');
+      throw new ValidationError('Repository URL must be a valid GitHub repository URL');
     }
 
     const analyzer = new GitHubIssuesAnalyzer();

@@ -4,6 +4,7 @@ import { DeveloperScope, DiscoveryFilters } from '../types/developer-types.js';
 import { logger, setLogLevel } from '../utils/logger.js';
 import { validateConfig } from '../utils/config.js';
 import { tempManager } from '../utils/temp-manager.js';
+import { ValidationError } from '../utils/error-handler.js';
 import { GitHubDiscoveryService } from '../services/github-discovery.js';
 import { formatDeveloperAnalysis } from '../index.js';
 
@@ -21,12 +22,12 @@ export async function evaluateCommand(username: string, options: any): Promise<v
 
     const days = parseInt(options.days, 10);
     if (isNaN(days) || days < 1 || days > 365) {
-      throw new Error('Days must be a number between 1 and 365');
+      throw new ValidationError('Days must be a number between 1 and 365');
     }
 
     // Validate username format
     if (!username.match(/^[a-zA-Z0-9-]+$/)) {
-      throw new Error('Invalid GitHub username format');
+      throw new ValidationError('Invalid GitHub username format');
     }
 
     // Build scope and filters

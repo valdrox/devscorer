@@ -11,7 +11,7 @@ function getEnvVar(name: string, defaultValue?: string): string {
     if (defaultValue !== undefined) {
       return defaultValue;
     }
-    throw new Error(`Environment variable ${name} is required but not set`);
+    throw new ConfigurationError(`Environment variable ${name} is required but not set`);
   }
   return value;
 }
@@ -23,7 +23,7 @@ function getEnvNumber(name: string, defaultValue: number): number {
   }
   const parsed = parseInt(value, 10);
   if (isNaN(parsed)) {
-    throw new Error(`Environment variable ${name} must be a valid number`);
+    throw new ConfigurationError(`Environment variable ${name} must be a valid number`);
   }
   return parsed;
 }
@@ -35,7 +35,7 @@ function getEnvFloat(name: string, defaultValue: number): number {
   }
   const parsed = parseFloat(value);
   if (isNaN(parsed)) {
-    throw new Error(`Environment variable ${name} must be a valid number`);
+    throw new ConfigurationError(`Environment variable ${name} must be a valid number`);
   }
   return parsed;
 }
@@ -61,7 +61,7 @@ export const config = new Proxy({} as Omit<Config, 'anthropicApiKey'> & {
 }, {
   get(target, prop) {
     if (prop === 'anthropicApiKey') {
-      throw new Error('Use getConfig() or validateConfig() to access API key asynchronously');
+      throw new ConfigurationError('Use getConfig() or validateConfig() to access API key asynchronously');
     }
     // Load non-API-key config synchronously
     const syncConfig = {

@@ -1,6 +1,7 @@
 import { Octokit } from 'octokit';
 import { logger } from '../utils/logger.js';
 import { authManager } from '../auth/auth-manager.js';
+import { ValidationError } from '../utils/error-handler.js';
 import {
   DeveloperDiscovery,
   DeveloperScope,
@@ -44,7 +45,7 @@ export class GitHubDiscoveryService {
 
   async discoverUserActivity(scope: DeveloperScope, filters?: DiscoveryFilters): Promise<DeveloperDiscovery> {
     await this.initializeOctokit();
-    if (!this.octokit) throw new Error('GitHub API not initialized');
+    if (!this.octokit) throw new ValidationError('GitHub API not initialized');
 
     logger.info(`🔍 Discovering activity for user '${scope.username}' over last ${scope.days} days`);
 
@@ -206,7 +207,7 @@ export class GitHubDiscoveryService {
   }
 
   private async getUserEvents(username: string, days: number): Promise<any[]> {
-    if (!this.octokit) throw new Error('Octokit not initialized');
+    if (!this.octokit) throw new ValidationError('Octokit not initialized');
 
     const events: any[] = [];
     let page = 1;
@@ -247,7 +248,7 @@ export class GitHubDiscoveryService {
   }
 
   private async getPublicUserEvents(username: string, days: number): Promise<any[]> {
-    if (!this.octokit) throw new Error('Octokit not initialized');
+    if (!this.octokit) throw new ValidationError('Octokit not initialized');
 
     const events: any[] = [];
     let page = 1;
@@ -288,7 +289,7 @@ export class GitHubDiscoveryService {
     username: string,
     since: Date
   ): Promise<RepositoryActivity> {
-    if (!this.octokit) throw new Error('Octokit not initialized');
+    if (!this.octokit) throw new ValidationError('Octokit not initialized');
 
     let commits = 0;
     let issues = 0;

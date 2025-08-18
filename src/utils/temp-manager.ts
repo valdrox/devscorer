@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import tmp from 'tmp';
+import { ValidationError } from './error-handler.js';
 import { logger } from './logger.js';
 
 export class TempManager {
@@ -68,7 +69,7 @@ export class TempManager {
 
   async copyToTemp(sourcePath: string, prefix: string = 'copy-'): Promise<string> {
     if (!(await fs.pathExists(sourcePath))) {
-      throw new Error(`Source path does not exist: ${sourcePath}`);
+      throw new ValidationError(`Source path does not exist: ${sourcePath}`);
     }
 
     const sourceStats = await fs.stat(sourcePath);
