@@ -6,7 +6,6 @@ import {
   DeveloperScope,
   RepositoryActivity,
   DiscoveryFilters,
-  ConfirmationPrompt,
 } from '../types/developer-types.js';
 
 export class GitHubDiscoveryService {
@@ -422,38 +421,4 @@ export class GitHubDiscoveryService {
     return codeAnalysisCalls + socialAnalysisCalls;
   }
 
-  generateConfirmationPrompt(discovery: DeveloperDiscovery): ConfirmationPrompt {
-    const estimatedCost = discovery.estimatedLLMCalls * 0.15; // Rough estimate: $0.15 per LLM call
-    const estimatedDuration = discovery.estimatedLLMCalls * 3; // Rough estimate: 3 seconds per LLM call
-
-    const message = `Found activity for '${discovery.username}' in last period:
-
-📊 Activity Summary:
-• ${discovery.totalRepositories} repositories with activity
-• ${discovery.totalCommits} commits
-• ${discovery.totalIssues} issues created/commented
-• ${discovery.totalPullRequests} pull requests
-• ${discovery.totalReviews} code reviews
-• ${discovery.totalComments} comments
-
-📈 Analysis Scope:
-• Estimated ${discovery.estimatedLLMCalls} LLM evaluations needed
-• Estimated cost: ~$${estimatedCost.toFixed(2)}
-• Estimated time: ~${Math.ceil(estimatedDuration / 60)} minutes
-
-🏢 Organizations: ${discovery.organizations.join(', ')}
-
-Top active repositories:
-${discovery.repositories.slice(0, 5).map(repo => {
-  const total = repo.commits + repo.issues + repo.pullRequests + repo.reviews + repo.comments;
-  return `• ${repo.fullName} (${total} activities)`;
-}).join('\n')}`;
-
-    return {
-      discovery,
-      estimatedCost,
-      estimatedDuration,
-      message,
-    };
-  }
 }

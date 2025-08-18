@@ -82,12 +82,6 @@ export interface DiscoveryFilters {
   excludePrivate?: boolean;
 }
 
-export interface ConfirmationPrompt {
-  discovery: DeveloperDiscovery;
-  estimatedCost: number;
-  estimatedDuration: number;
-  message: string;
-}
 
 export interface ParallelOptions {
   parallel?: boolean;

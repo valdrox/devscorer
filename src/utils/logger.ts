@@ -203,9 +203,6 @@ export function setLogLevel(level: 'debug' | 'info' | 'warn' | 'error'): void {
   logger.level = level;
 }
 
-export function createChildLogger(metadata: LogContext): StructuredLogger {
-  return logger.createChildLogger(metadata);
-}
 
 // Prompt logging system
 export enum PromptType {
